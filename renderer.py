@@ -90,8 +90,8 @@ class Renderer:
   def circle(self, x, y, r, color):
     self.draw.ellipse([x - r, y - r, x + r, y + r], fill=color, outline=color)
 
-  def line(self, x1, y1, x2, y2, color):
-    self.draw.line([x1, y1, x2, y2], fill=color)
+  def line(self, x1, y1, x2, y2, color, width):
+    self.draw.line([x1, y1, x2, y2], fill=color, width=math.ceil(width))
 
   def text(self, x, y, text, color):
     self.draw.text((x, y), text, fill=color)
@@ -184,8 +184,8 @@ class Renderer:
     screen_points = [(self.X(x), self.Y(y)) for x, y in points]
     self.draw.polygon(screen_points, fill=color, outline=color)
 
-  def world_line(self, x1, y1, x2, y2, color):
-    self.line(self.X(x1), self.Y(y1), self.X(x2), self.Y(y2), color)
+  def world_line(self, x1, y1, x2, y2, color, width):
+    self.line(self.X(x1), self.Y(y1), self.X(x2), self.Y(y2), color, self.S(width))
 
   def world_rect(self, x, y, w, h, color):
     self.rect(self.X(x), self.Y(y), self.X(x + w), self.Y(y + h), color)

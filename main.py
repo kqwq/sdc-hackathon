@@ -22,13 +22,16 @@ import renderer
 import math
 
 # Constants
-DOOR_THICKNESS = 0.01
+DOOR_THICKNESS = 0.04
 DOOR_LENGTH = 0.4
 DOOR_OPEN_AMOUNT = 0.8
+DOOR_OPEN_RADIUS = 0.35
+DEBUG_MODE = False
 
 
 # Define various objects
 objs = []
+ships = []
 
 
 class WorldObject:
@@ -42,6 +45,34 @@ class WorldObject:
 
   def draw(self):
     raise NotImplementedError("Subclasses should implement this!")
+
+
+class LaserBeam(WorldObject):
+  def __init__(self, x, y, theta):
+    super().__init__(x, y)
+    self.speed = 50
+    self.vx = math.cos(theta) * self.speed
+    self.vy = math.sin(theta) * self.speed
+    self.length = 0.5
+    self.x2 = x + math.cos(theta) * self.length
+    self.y2 = y + math.sin(theta) * self.length
+    self.size = 0.03
+    self.color = 'limegreen'
+    self.lifespan = 5.0
+
+  def update(self, delta):
+    self.x += self.vx * delta
+    self.y += self.vy * delta
+    self.x2 += self.vx * delta
+    self.y2 += self.vy * delta
+    self.lifespan -= delta
+    if self.lifespan < 0:
+      objs.remove(self)
+
+  def draw(self):
+
+    renderer.world_line(self.x, self.y, self.x2,
+                        self.y2, self.color, self.size)
 
 
 class Tile(WorldObject):
@@ -63,8 +94,7 @@ class Tile(WorldObject):
     self.doors = []  # (x, y, is-vertical, closed-amount)
     for doorPos in doorPositions:
       self.addDoor(doorPos)
-    self.meInside = False
-    self.meAdjacent = False
+    self.nearPlayer = False
 
   '''
   position is one of 0=top-left, 1=top-right, 2=right, 3=bottom-right, 4=bottom-left, 5=left
@@ -72,12 +102,18 @@ class Tile(WorldObject):
 
   def addDoor(self, position):
     doorPosTable = [
-      [0.5, DOOR_THICKNESS, False, 1],  # top-left
-      [1.5, DOOR_THICKNESS, False, 1],  # top-right
-      [2 - DOOR_THICKNESS, 0.5, True, 1],   # right
-      [1.5, 1 - DOOR_THICKNESS, False, 1],  # bottom-right
-      [0.5, 1 - DOOR_THICKNESS, False, 1],  # bottom-left
-      [DOOR_THICKNESS, 0.5, True, 1],   # left
+      [0.5, DOOR_THICKNESS, 0.5 - DOOR_LENGTH, DOOR_THICKNESS,
+       0.5 + DOOR_LENGTH, DOOR_THICKNESS, False, 1],  # top-left
+      [1.5, DOOR_THICKNESS, 1.5 - DOOR_LENGTH, DOOR_THICKNESS,
+       1.5 + DOOR_LENGTH, DOOR_THICKNESS, False, 1],  # top-right
+      [2 - DOOR_THICKNESS, 0.5, 2 - DOOR_THICKNESS, 0.5 - DOOR_LENGTH,
+       2 - DOOR_THICKNESS, 0.5 + DOOR_LENGTH, True, 1],   # right
+      [1.5, 1 - DOOR_THICKNESS, 1.5 - DOOR_LENGTH, 1 - DOOR_THICKNESS,
+       1.5 + DOOR_LENGTH, 1 - DOOR_THICKNESS, False, 1],  # bottom-right
+      [0.5, 1 - DOOR_THICKNESS, 0.5 - DOOR_LENGTH, 1 - DOOR_THICKNESS,
+       0.5 + DOOR_LENGTH, 1 - DOOR_THICKNESS, False, 1],  # bottom-left
+      [DOOR_THICKNESS, 0.5, DOOR_THICKNESS, 0.5 - DOOR_LENGTH,
+       DOOR_THICKNESS, 0.5 + DOOR_LENGTH, True, 1],   # left
     ]
     self.doors.append(doorPosTable[position])
 
@@ -86,45 +122,65 @@ class Tile(WorldObject):
       self.parent.ctheta - self.y * self.parent.stheta
     self.ay = self.parent.y + self.y * \
         self.parent.ctheta + self.x * self.parent.stheta
-    dx = me.x - self.ax
-    dy = me.y - self.ay
-    self.meInside = 0 < dx < 2 and 0 < dy < 1
-    if self.meInside:
-      me.insideTile = self
-    self.meAdjacent = -1 < dx < 3 and -1 < dy < 2
+    tx, ty = self.transform(0, 0)
 
-    for door in self.doors:
-      if self.meAdjacent and math.dist((me.x, me.y), (self.ax + door[0], self.ay + door[1])) < 0.3:
-
-        door[3] += (0 - door[3]) * 0.5
+    if isinstance(me, Bird) and me.nearestShip == self.parent:
+      if abs(me.insideTileX - self.x - 1) < 1.5 and abs(me.insideTileY - self.y - 0.5) < 1:
+        self.nearPlayer = True
+        for door in self.doors:
+          if math.dist((me.x, me.y), self.transform(door[0], door[1])) < DOOR_OPEN_RADIUS:
+            me.isNearDoor = True
+            door[7] += ((1 - DOOR_OPEN_AMOUNT) - door[7]) * 0.25
+          else:
+            door[7] += (1 - door[7]) * 0.75
       else:
-        door[3] += (1 - door[3]) * 0.5
+        self.nearPlayer = False
+
+  def transform(self, x, y):
+    return (
+      self.parent.x + (self.x + x) * self.parent.ctheta -
+        (self.y + y) * self.parent.stheta,
+      self.parent.y + (self.y + y) * self.parent.ctheta +
+        (self.x + x) * self.parent.stheta
+    )
 
   def draw(self):
 
-    # if self.type == 'engine' and self.parent.usingEngines:sa
+    if self.type == 'engine' and self.parent.usingEngines:
+      ex, ey = self.transform(2.5, 0.5)
+      lx, ly = self.transform(2, 0.1)
+      rx, ry = self.transform(2, 0.9)
+      renderer.world_polygon(
+        [(ex, ey), (lx, ly), (rx, ry)], 'red')
 
-    renderer.world_rect(self.x - 0.1, self.y - 0.1, 2 + 0.2, 1 + 0.2, 'green')
+    # renderer.world_rect(self.x - 0.1, self.y - 0.1, 2 + 0.2, 1 + 0.2, 'green')
     # renderer.world_img(self.image, self.ax, self.ay, 2)
     renderer.world_img_rot(self.image, self.ax, self.ay, 2, self.parent.theta)
-    for px, py, isVertical, step in self.doors:
+    col = '#98F5F9'
+    if DEBUG_MODE:
+      col = 'red' if self.nearPlayer else 'blue'
+    for cx, cy, d1x, d1y, d2x, d2y, isVertical, step in self.doors:
+      dox = 0
+      doy = 0
       if isVertical:
-        renderer.world_rect(self.ax + px - DOOR_THICKNESS, self.ay + py -
-                            DOOR_LENGTH, DOOR_THICKNESS * 2, DOOR_LENGTH * step, 'blue')
-        renderer.world_rect(self.ax + px - DOOR_THICKNESS, self.ay + py - DOOR_LENGTH *
-                            (1 - step), DOOR_THICKNESS * 2, DOOR_LENGTH * step, 'blue')
+        doy = DOOR_OPEN_AMOUNT / 2 * step
       else:
-        # Left door
-        renderer.world_rect(self.ax + px - DOOR_LENGTH, self.ay + py -
-                            DOOR_THICKNESS, DOOR_LENGTH * step, DOOR_THICKNESS * 2, 'blue')
-        renderer.world_rect(self.ax + px + DOOR_LENGTH * (1 - step), self.ay +
-                            py - DOOR_THICKNESS, DOOR_LENGTH * step, DOOR_THICKNESS * 2, 'blue')
-    renderer.world_circle(self.ax, self.ay, 0.1, 'limegreen')
+        dox = DOOR_OPEN_AMOUNT / 2 * step
+      d1x1, d1y1 = self.transform(d1x, d1y)
+      d1x2, d1y2 = self.transform(d1x + dox, d1y + doy)
+      d2x1, d2y1 = self.transform(d2x, d2y)
+      d2x2, d2y2 = self.transform(d2x - dox, d2y - doy)
+      renderer.world_line(d1x1, d1y1, d1x2, d1y2, col, DOOR_THICKNESS)
+      renderer.world_line(d2x1, d2y1, d2x2, d2y2, col, DOOR_THICKNESS)
+
+    if DEBUG_MODE:
+      renderer.world_circle(self.ax, self.ay, 0.1, col)
 
 
 class Ship(WorldObject):
   def __init__(self, x, y, name):
     super().__init__(x, y)
+    ships.append(self)
     self.name = name
     self.tiles = []
     self.fuel = 10000
@@ -137,23 +193,25 @@ class Ship(WorldObject):
     self.chairX = 0.25
     self.chairY = 0.5
     self.speed = 0
-    self.maxSpeed = 10
+    self.maxSpeed = 20
     self.acc = 5
     self.usingEngines = False
     self.cockpit = None
+    self.shootCooldown = 0
+    self.shootCooldownMax = 0.1
 
   def convertToBasicShip(self):
     for tile in self.tiles:
       objs.remove(tile)
     self.tiles = [
-      Tile(self, 2, -2, 'weapon', [4]),
+      Tile(self, 2, -2, 'weapon-r', [4]),
       Tile(self, 1, -1, 'ap', [1, 3, 4]),
       Tile(self, 3, -1, 'engine'),
       Tile(self, 0, 0, 'control', [1, 3]),
       Tile(self, 2, 0, 'ap', [0, 2]),
       Tile(self, 1, 1, 'ap', [0, 3]),
       Tile(self, 3, 1, 'engine'),
-      Tile(self, 2, 2, 'weapon', [0]),
+      Tile(self, 2, 2, 'weapon-l', [0]),
     ]
 
   def player_control(self, delta):
@@ -178,7 +236,19 @@ class Ship(WorldObject):
       renderer.camGotoHt = max(0.05, renderer.camHt / 2)
       self.cockpit = None
 
-    # Update position based on speed
+    # On mouse press, find all weapon tiles and fire them
+    self.shootCooldown -= delta
+    if self.shootCooldown < 0 and mouse['left']:
+      print("Firing weapon")
+      self.shootCooldown = self.shootCooldownMax
+      for tile in self.tiles:
+        if tile.type == 'weapon-l' or tile.type == 'weapon-r':
+          # Find the nearest ship and fire the weapon
+          if isinstance(tile, Tile) and tile.parent:
+            x, y = tile.transform(1, 0.5)
+            theta = self.theta + math.pi
+            print(f"Firing weapon at {x}, {y} with angle {theta}")
+            LaserBeam(x, y, theta)
 
   def update(self, delta):
     self.stheta = math.sin(self.theta)
@@ -231,38 +301,105 @@ class Bird(WorldObject):
     self.img = renderer.load_image('bird.png')
     self.speed = 1
     self.flipped = False
-    self.insideTile = None
+    self.nearestShip = None
+    self.insideTileX = 0
+    self.insideTileY = 0
+    self.isNearDoor = False
+
+  def revertPosition(self):
+    # Revert the position of the bird to the last position
+    self.x = self.lastX
+    self.y = self.lastY
 
   def player_control(self, delta):
+    self.lastX = self.x
+    self.lastY = self.y
+    vx = 0
+    vy = 0
     if keys.get('w', False):
-      self.y -= self.speed * delta
+      vy -= self.speed * delta
     if keys.get('s', False):
-      self.y += self.speed * delta
+      vy += self.speed * delta
     if keys.get('a', False):
-      self.x -= self.speed * delta
+      vx -= self.speed * delta
       self.flipped = False
     if keys.get('d', False):
-      self.x += self.speed * delta
+      vx += self.speed * delta
       self.flipped = True
-    if keys.get('Return', False) and self.insideTile:
+    if abs(vx) and abs(vy):
+      vx *= math.sqrt(2) / 2
+      vy *= math.sqrt(2) / 2
+    self.x += vx
+    self.y += vy
+    if keys.get('Return', False) and self.nearestShip:
       # Entering the ship
       keys['Return'] = False
-      self.x = self.insideTile.parent.chairX
-      self.y = self.insideTile.parent.chairY
+      self.x = self.nearestShip.chairX
+      self.y = self.nearestShip.chairY
       global me
-      me = self.insideTile.parent
-      self.insideTile.parent.cockpit = self
+      me = self.nearestShip
+      self.nearestShip.cockpit = self
       renderer.camGotoHt = max(0.05, renderer.camHt / 2)
 
-    if self.insideTile:
+    if self.nearestShip:
       hud.hintText = "Press <Enter> to control ship"
     else:
       hud.hintText = ""
 
   def update(self, delta):
-    if self.insideTile and self.insideTile.parent and not self.insideTile.parent.cockpit:
-      self.x += self.insideTile.parent.vx * delta
-      self.y += self.insideTile.parent.vy * delta
+    # if self.insideTile and self.insideTile.parent and not self.insideTile.parent.cockpit:
+    if self.nearestShip:
+      self.x += self.nearestShip.vx * delta
+      self.y += self.nearestShip.vy * delta
+
+    minDist = 1000
+    for ship in ships:
+      dist = math.dist((self.x, self.y), (ship.x, ship.y))
+      if dist < minDist:
+        minDist = dist
+        self.nearestShip = ship
+
+    # For nearest ship calculate the tile x and y
+    if self.nearestShip:
+      # Transform the coordinates to the ship's coordinates
+      x = self.x - self.nearestShip.x
+      y = self.y - self.nearestShip.y
+      self.insideTileX = x * self.nearestShip.ctheta + y * self.nearestShip.stheta
+      self.insideTileY = y * self.nearestShip.ctheta - x * self.nearestShip.stheta
+      # print(f"Inside tile: {self.insideTileX}, {self.insideTileY}")
+
+      # Check if bird is close to the tile's outline. If so, "push" the bird back perpendicular to the tile's outline
+    if self.nearestShip and not self.isNearDoor:
+      tolerance = self.size * 0.5
+      insideTile = False
+      ix = math.floor(self.insideTileX)
+      iy = math.floor(self.insideTileY)
+      # print(f"Tile: {ix}, {iy}")
+      if iy % 2 == 1:
+        ix -= 1
+        self.insideTileX -= 1
+      for tile in self.nearestShip.tiles:
+        if tile.y == iy and (tile.x == ix or tile.x == ix + 1):
+          insideTile = True
+          break
+      if insideTile:
+        fx = 0
+        if self.insideTileX % 2 < tolerance:
+          fx = 1
+        elif self.insideTileX % 2 > 2 - tolerance:
+          fx = -1
+        fy = 0
+        if self.insideTileY % 1 < tolerance:
+          fy = 1
+        elif self.insideTileY % 1 > 1 - tolerance:
+          fy = -1
+        if fx != 0 or fy != 0:
+          # Rotate the vector to the ship's coordinates
+          fx = fx * self.nearestShip.ctheta - fy * self.nearestShip.stheta
+          fy = fy * self.nearestShip.ctheta + fx * self.nearestShip.stheta
+          # Move the bird back
+          self.revertPosition()
+    self.isNearDoor = False
 
   def draw(self):
     func = renderer.world_img_flipped if self.flipped else renderer.world_img
@@ -450,7 +587,7 @@ class GameManager:
       Ship(0, 0, 'My-ship').convertToBasicShip()
 
       global me
-      me = Bird(0, 0)
+      me = Bird(0.1, 0.1)
 
     elif scene == "level_editor":
       for i in range(50):
@@ -504,10 +641,10 @@ def mainloop():
 
   # Update game state
   gameManager.preupdate()
-  for obj in objs:
-    obj.update(delta)
   if me:
     me.player_control(delta)
+  for i in range(len(objs) - 1, -1, -1):
+    objs[i].update(delta)
   gameManager.postupdate()
   renderer.update(mouse, keys)
   if gameManager.scene_name == "level_editor":
