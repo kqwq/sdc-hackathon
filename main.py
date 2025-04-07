@@ -411,27 +411,28 @@ class StoryController:
   def __init__(self):
     self.storyStep = 0
     self.startDialog = [
-      ["me", "Where am I...?"],
-      ["bird2", "You are on the TS Blue, a raven-class starship. We are in the middle of an intense space battle. We need your help to win."],
+      ["me", "Where am I?"],
+      ["bird2", "You are on our home ship. We are in the middle of an intense space battle. We need your help to win."],
       ["me", "My help?"],
-      ["bird2", "Yes. We unfroze you from cryostasis. Don't tell me you forgot everything."],
-      ["me", "Well... the thing is... I don't remember anything."],
-      ["bird2", "Ah #$&* - we are all gonna die."],
+      ["bird2", "Yes. You were unfrozen from cryostasis."],
+      ["me", "Huh?"],
+      ["bird2", "Don't you remember?"]
+      ["me", "Not really..."],
+      ["bird2", "Well then, we are all going to die."],
       ["system", "Use the <WASD> keys to move, <Enter> to interact with objects, and <Left Click> to shoot."]
     ]
     self.askForHelpDialog = [
-      ["me", "I'm going to need your help for this."],
-      ["bird2", "Why."],
-      ["me", "Well, I know that two is tougher than one."],
-      ["bird2", "What do you want."],
-      ["me", "Assist me in the battle."],
-      ["bird2", "Fine. But this better work."],
+      ["me", "Please help me out."],
+      ["bird2", "Why?"],
+      ["me", "Because two is tougher than one."],
+      ["bird2", "That's so corny."],
+      ["me", "I know, but it's our only chance at winning this battle.."],
+      ["bird2", "Fine - but this better work."],
       ["system", "bird2 is now your companion. bird2 will now follow you and help you in battle."]
     ]
     self.endDialog = [
-      ["bird2", "WOW! We did it! Two ships are better than one!"],
-      ["me", "Yeah, I can't believe we survived!"],
-      ["bird2", "Two is stronger."]
+      ["bird2", "We won! Two is tougher!"],
+      ["system", "You have won the battle."]
     ]
 
 class WorldBuilder:
