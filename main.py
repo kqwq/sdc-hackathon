@@ -268,7 +268,7 @@ class Ship(WorldObject):
         renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
 
 
-class CarrierShip(WorldObject):
+class BlueMothership(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
     self.name = 'CarrierShip'
@@ -407,6 +407,32 @@ class Bird(WorldObject):
 
     # renderer.img(self.img, self.x, self.y, self.size)
 
+class StoryController:
+  def __init__(self):
+    self.storyStep = 0
+    self.startDialog = [
+      ["me", "Where am I...?"],
+      ["bird2", "You are on the TS Blue, a raven-class starship. We are in the middle of an intense space battle. We need your help to win."],
+      ["me", "My help?"],
+      ["bird2", "Yes. We unfroze you from cryostasis. Don't tell me you forgot everything."],
+      ["me", "Well... the thing is... I don't remember anything."],
+      ["bird2", "Ah #$&* - we are all gonna die."],
+      ["system", "Use the <WASD> keys to move, <Enter> to interact with objects, and <Left Click> to shoot."]
+    ]
+    self.askForHelpDialog = [
+      ["me", "I'm going to need your help for this."],
+      ["bird2", "Why."],
+      ["me", "Well, I know that two is tougher than one."],
+      ["bird2", "What do you want."],
+      ["me", "Assist me in the battle."],
+      ["bird2", "Fine. But this better work."],
+      ["system", "bird2 is now your companion. bird2 will now follow you and help you in battle."]
+    ]
+    self.endDialog = [
+      ["bird2", "WOW! We did it! Two ships are better than one!"],
+      ["me", "Yeah, I can't believe we survived!"],
+      ["bird2", "Two is stronger."]
+    ]
 
 class WorldBuilder:
   def __init__(self):
@@ -578,7 +604,7 @@ class GameManager:
       for i in range(100):
         DebugCircle()
 
-      CarrierShip(0, 0)
+      BlueMothership(0, 0)
       # for x in range(-10, -5):
       #   for y in range(5, 10):
       #     if x % 2 == y % 2:

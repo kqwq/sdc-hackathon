@@ -106,11 +106,7 @@ class Renderer:
     img = img.resize((math.ceil(size), math.ceil(h)), Image.Resampling.LANCZOS)
     self.image.paste(img, (int(x - w / 2), int(y - h / 2)), img)
 
-  def polygon(self, points, color):
-    # Convert world coordinates to screen coordinates
-    screen_points = [(self.X(x), self.Y(y)) for x, y in points]
-    self.draw.polygon(screen_points, fill=color, outline=color)
-
+  # Convert world X coordinate to screen X position
   def X(self, x):
     return self.hw + (x - self.camX) / self.camHt
 
