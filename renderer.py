@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageTk, ImageFont
 import tkinter as tk
 import math
 
@@ -98,13 +98,15 @@ class Renderer:
 
   def text_center(self, x, y, text, color):
     self.draw.text((x, y), text, fill=color, align="center", anchor="mm")
+    
+  def text_center_very_large(self, x, y, text, color):
+    font = ImageFont.truetype("cour.ttf", 50)
+    self.draw.text((x, y), text, fill=color, align="center", anchor="mm", font=font)
 
   def img(self, img, x, y, size):
-    print(f"img: {img}, x: {x}, y: {y}, size: {size}")
-    w, h = img.size
-    h = h * size / w
+    h = size * img.size[1] / img.size[0]
     img = img.resize((math.ceil(size), math.ceil(h)), Image.Resampling.LANCZOS)
-    self.image.paste(img, (int(x - w / 2), int(y - h / 2)), img)
+    self.image.paste(img, (math.ceil(x), math.ceil(y)), img)
 
   # Convert world X coordinate to screen X position
   def X(self, x):

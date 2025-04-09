@@ -267,13 +267,24 @@ class Ship(WorldObject):
       if tile == 1:
         renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
 
+class CollisionWall(WorldObject):
+  def __init__(self, x, y, x2=0, y2=0):
+    super().__init__(x, y)
+    self.x2 = x2
+    self.y2 = y2
+
+  def update(self, delta):
+    pass
+
+  def draw(self):
+    renderer.world_line(self.x, self.y, self.x2, self.y2, 'red', 0.1)
 
 class BlueMothership(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
     self.name = 'CarrierShip'
     self.size = s = 200
-    sx = s * 2
+    self.size2 = sx = s * 2
     self.points = [
       (0, -s),
       (sx * 0.1, -s * 0.9),
@@ -283,6 +294,18 @@ class BlueMothership(WorldObject):
       (-sx * 0.1, -s * 0.9),
     ]
     self.color = 'gray'
+    
+  def updatePoints(self):
+    s = self.size
+    sx = self.size2
+    self.points = [
+      (0, -s),
+      (sx * 0.1, -s * 0.9),
+      (sx * 0.1, s * 0.9),
+      (0, s),
+      (-sx * 0.1, s * 0.9),
+      (-sx * 0.1, -s * 0.9),
+    ]
 
   def update(self, delta):
     pass
@@ -407,6 +430,7 @@ class Bird(WorldObject):
 
     # renderer.img(self.img, self.x, self.y, self.size)
 
+
 class StoryController:
   def __init__(self):
     self.storyStep = 0
@@ -416,7 +440,7 @@ class StoryController:
       ["me", "My help?"],
       ["bird2", "Yes. You were unfrozen from cryostasis."],
       ["me", "Huh?"],
-      ["bird2", "Don't you remember?"]
+      ["bird2", "Don't you remember?"],
       ["me", "Not really..."],
       ["bird2", "Well then, we are all going to die."],
       ["system", "Use the <WASD> keys to move, <Enter> to interact with objects, and <Left Click> to shoot."]
@@ -435,34 +459,110 @@ class StoryController:
       ["system", "You have won the battle."]
     ]
 
-class WorldBuilder:
+
+class LevelEditor:
   def __init__(self):
-    objs.append(self)
     self.options = [
-      {
-          'name': 'Bird',
-          'class': Bird,
-          'img': renderer.load_image('bird.png'),
-      },
-      {
-          'name': 'Ship',
-          'class': Ship,
-          'img': renderer.load_image('tile-1.png'),
-      }
+      # Name, image, class, arg1, arg2
+      ['Bird (me)', 'bird.png', Bird],
+      ['Bird (friend)', 'bird.png', Bird],
+      ['Blue Ship', None, BlueMothership, 'y-size', 'x-size2'],
+      ['Ship', None, Ship],
+      ['Collision wall', None, CollisionWall, 'xy-x2-y2'],
+      # ['Blue Ship', None, BlueMothership],
+      # ['Blue Ship', None, BlueMothership],
+      # ['Blue Ship', None, BlueMothership],
+
     ]
+    for o in self.options:
+      if o[1] != None:
+        o[1] = renderer.load_image(o[1])
+    self.mode = "none"  # "none"|"placing"
+    self.hovering = -1
+    self.ghost = None
+    self.argStep = 0
 
   def update(self, delta):
     pass
 
   def draw(self):
     # print('hi')
+    op = self.options[self.hovering]
+    if self.mode == "none":
+      pass
+    elif self.mode == "placing":
+      if self.argStep == 0:
+        self.ghost.x = round(renderer.RevX(mouse['x']))
+        self.ghost.y = round(renderer.RevY(mouse['y']))
+        renderer.text(10, 140, f"Click to place\nX: {self.ghost.x}\nY: {self.ghost.y}", 'white')
+      else:
+        dir, arg, *arg2 = op[self.argStep + 2].split("-")
+        s = 0
+        s2 = 0
+        if len(arg2) > 0:
+          arg2 = arg2[0]
+        if dir == 'x':
+          s = round(renderer.RevX(mouse['x']) - self.ghost.x)
+          setattr(self.ghost, arg, s)        
+          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttribute: {arg}\nValue: {s}", 'white')
+        elif dir == 'y':
+          s = round(renderer.RevY(mouse['y']) - self.ghost.y)
+          setattr(self.ghost, arg, s)
+          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttribute: {arg}\nValue: {s}", 'white')
+        elif dir == 'xy':
+          s = round(renderer.RevX(mouse['x']))
+          s2 = round(renderer.RevY(mouse['y']))
+          # print(s, s2, arg, arg2)
+          setattr(self.ghost, arg, s)
+          setattr(self.ghost, arg2, s2)
+          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttributes: {arg}, {arg2}\nValue: {s}, {s2}", 'white')
 
-    x = window['width'] - 200
-    y = 100
+        if hasattr(self.ghost, 'updatePoints'):
+          self.ghost.updatePoints()
+
+      
+      
+      if mouse['left']:
+        mouse['left'] = False
+        print(len(op)-3, self.argStep)
+        if len(op) - 3 > self.argStep: # keep going
+          self.argStep += 1
+        else:
+          self.mode = "none"
+          self.ghost = None
+          self.argStep = 0
+      elif mouse['right']:
+        self.mode = "none"
+        self.ghost = None
+        self.argStep = 0
+
+      # Menu options on right side
+    x = window['width'] - 50
+    renderer.rect_outlined(
+      window['width'] - 100, 5, window['width'] - 5, window['height'] - 5, 'black', 'white')
+    y = 50
     for i in range(len(self.options)):
       option = self.options[i]
-      renderer.img(option['img'], x, y, 20)
-      x += 50
+      if mouse['x'] > x - 26 and mouse['x'] < x + 26 and mouse['y'] > y - 26 and mouse['y'] < y + 26:
+        self.hovering = i
+        
+        mouse['cursor'] = 'hand2'
+        if self.mode == 'none' and mouse['left']:
+          mouse['left'] = False
+          self.mode = 'placing'
+          self.ghost = option[2](0, 0)
+          
+          
+        renderer.rect(x - 26, y - 26, x + 26, y + 26, '#1a1')
+      else:
+        renderer.rect(x - 26, y - 26, x + 26, y + 26, '#222')
+      if option[1]:
+        renderer.img(option[1], x - 10, y - 10, 20)
+      else:
+        renderer.text_center(x, y, option[0], 'white')
+      # Show how many options are available
+      renderer.text_center(x, y + 20, str(len(option)-3), 'white')
+      y += 50
 
 
 # Constants
@@ -486,6 +586,7 @@ me = None
 
 # Define renderer
 renderer = renderer.Renderer(root, window)
+le = LevelEditor()
 
 
 class DebugCircle():
@@ -507,6 +608,29 @@ class DebugCircle():
     renderer.world_circle(self.x, self.y, self.r, self.color)
 
 # Define UI elements
+class MenuText:
+  def __init__(self, x, y, text, color, isVeryLarge=False):
+    objs.append(self)
+    self.text = text
+    self.x = x
+    self.y = y
+    self.relativeX = x - window['width'] / 2
+    self.relativeY = y - window['height'] / 2
+    self.color = color
+    self.isVeryLarge = isVeryLarge
+
+  def update(self, delta):
+    pass
+
+  def draw(self):
+    if self.isVeryLarge:
+      renderer.text_center_very_large(self.x, self.y, self.text, self.color)
+    else:
+      renderer.text_center(self.x, self.y, self.text, self.color)
+
+  def resize(self):
+    self.x = window['width'] / 2 + self.relativeX
+    self.y = window['height'] / 2 + self.relativeY
 
 
 class MenuOption:
@@ -517,6 +641,8 @@ class MenuOption:
     self.y = y
     self.w = 100
     self.h = 20
+    self.relativeX = x - window['width'] / 2
+    self.relativeY = y - window['height'] / 2
     self.command = command
     self.hover = False
 
@@ -541,8 +667,8 @@ class MenuOption:
     renderer.text_center(self.x, self.y, self.text, "white")
 
   def resize(self):
-    self.x = window['width'] / 2
-    self.y = window['height'] / 2 + (objs.index(self) * 50) - 50
+    self.x = window['width'] / 2 + self.relativeX
+    self.y = window['height'] / 2 + self.relativeY
 
 
 # Define HUD elements
@@ -592,13 +718,14 @@ class GameManager:
     w = window['width']
     h = window['height']
     if scene == "menu":
-      MenuOption("Start Game", w / 2, h / 2 - 50,
+      MenuText( w / 2, h / 2 - 120,"Birds in Space", "white", True)
+      MenuOption("Start Game", w / 2, h / 2 - 20,
                  lambda: self.change_scene("game"))
-      MenuOption("Level Editor", w / 2, h / 2,
+      MenuOption("Level Editor", w / 2, h / 2 + 30,
                  lambda: self.change_scene("level_editor"))
-      MenuOption("Options", w / 2, h / 2 + 50,
-                 lambda: self.change_scene("options"))
-      MenuOption("Exit", w / 2, h / 2 + 100, lambda: self.root.quit())
+      MenuOption("Credits", w / 2, h / 2 + 80,
+                 lambda: self.change_scene("credits"))
+      MenuOption("Exit", w / 2, h / 2 + 130, lambda: self.root.quit())
     elif scene == "game":
 
       # Game init
@@ -617,9 +744,17 @@ class GameManager:
       me = Bird(0.1, 0.1)
 
     elif scene == "level_editor":
-      for i in range(50):
+      for i in range(5):
         DebugCircle()
-      WorldBuilder()
+      
+    elif scene == "credits":
+      MenuOption("Back to Menu", w / 2, h / 2 + 120,
+                 lambda: self.change_scene("menu"))
+      MenuText(w / 2, h / 2 - 35, "Created by: <unknown>", "white")
+      MenuText(w / 2, h / 2 - 15, "Special thanks to Loc and the Software Development Club for hosting this hackathon.", "gold")
+      MenuText(w / 2, h / 2 + 5, "This game was created in 2 weeks in Python and Tkinter.", "white")
+      MenuText(w / 2, h / 2 + 25, "Thanks for playing!", "white")
+
 
   def preupdate(self):
     mouse['cursor'] = 'arrow'
@@ -670,12 +805,14 @@ def mainloop():
   gameManager.preupdate()
   if me:
     me.player_control(delta)
+    
   for i in range(len(objs) - 1, -1, -1):
     objs[i].update(delta)
   gameManager.postupdate()
   renderer.update(mouse, keys)
   if gameManager.scene_name == "level_editor":
     renderer.levelEditorControls(mouse, keys)
+    le.update(delta)
   elif gameManager.scene_name == "game":
     renderer.camX = me.x
     renderer.camY = me.y
@@ -686,6 +823,8 @@ def mainloop():
   for obj in objs:
     obj.draw()
   hud.draw()
+  if gameManager.scene_name == "level_editor":
+    le.draw()
 
   # Print debug (FPS)
   if delta > 0:
