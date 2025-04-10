@@ -178,7 +178,7 @@ class Tile(WorldObject):
 
 
 class Ship(WorldObject):
-  def __init__(self, x, y, name):
+  def __init__(self, x, y, name="Default"):
     super().__init__(x, y)
     ships.append(self)
     self.name = name
@@ -199,6 +199,8 @@ class Ship(WorldObject):
     self.cockpit = None
     self.shootCooldown = 0
     self.shootCooldownMax = 0.1
+    if self.name == "Basic":
+      self.convertToBasicShip()
 
   def convertToBasicShip(self):
     for tile in self.tiles:
@@ -279,19 +281,61 @@ class CollisionWall(WorldObject):
   def draw(self):
     renderer.world_line(self.x, self.y, self.x2, self.y2, 'red', 0.1)
 
-class BlueMothership(WorldObject):
+class TurretStation(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
-    self.name = 'CarrierShip'
-    self.size = s = 200
-    self.size2 = sx = s * 2
+    self.radius = 0.85
+    self.color = '#4030e0'
+    
+  def update(self, delta):
+    pass
+
+  def draw(self):
+    renderer.world_circle(self.x, self.y, self.radius, self.color)
+
+class Turret(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    self.theta = 0
+    self.radius = 1.45
+    self.color = '#777777'
+    
+  def update(self, delta):
+    pass
+
+  def draw(self):
+    renderer.world_circle(self.x, self.y, self.radius, self.color)
+    # Turret barrel
+    barrel_length = 0.5
+    barrel_width = 0.1
+    barrel_x = self.x + math.cos(self.theta) * barrel_length
+    barrel_y = self.y + math.sin(self.theta) * barrel_length
+    renderer.world_line(self.x, self.y, barrel_x, barrel_y, 'red', barrel_width)
+
+class SmallEnemyShip(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    
+  def update(self, delta):
+    pass
+  
+  def draw(self):
+    renderer.world_circle(self.x, self.y, 0.5, 'red')
+    pass
+
+class AllianceMotherShip(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    self.name = 'MotherShip'
+    self.size = s = 1
+    self.size2 = sx = 1
     self.points = [
-      (0, -s),
-      (sx * 0.1, -s * 0.9),
-      (sx * 0.1, s * 0.9),
-      (0, s),
-      (-sx * 0.1, s * 0.9),
-      (-sx * 0.1, -s * 0.9),
+      (0, -s * 1.1),
+      (sx , -s ),
+      (sx , s ),
+      (0, s* 1.1),
+      (-sx , s ),
+      (-sx , -s ),
     ]
     self.color = 'gray'
     
@@ -299,14 +343,13 @@ class BlueMothership(WorldObject):
     s = self.size
     sx = self.size2
     self.points = [
-      (0, -s),
-      (sx * 0.1, -s * 0.9),
-      (sx * 0.1, s * 0.9),
-      (0, s),
-      (-sx * 0.1, s * 0.9),
-      (-sx * 0.1, -s * 0.9),
+      (0, -s * 1.1),
+      (sx , -s ),
+      (sx , s ),
+      (0, s* 1.1),
+      (-sx , s ),
+      (-sx , -s ),
     ]
-
   def update(self, delta):
     pass
 
@@ -315,6 +358,42 @@ class BlueMothership(WorldObject):
       [(self.x + dx, self.y + dy) for dx, dy in self.points], self.color
     )
 
+class EnemyMotherShip(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    self.name = 'EnemyMotherShip'
+    self.size = s = 1
+    self.points = [
+      (0, -s * 1.5),
+      (s * 1.1, -s * 1.1),
+      (s * 1.5, 0),
+      (s * 1.1, s * 1.1),
+      (0, s * 1.5),
+      (-s * 1.1, s * 1.1),
+      (-s * 1.5, 0),
+      (-s * 1.1, -s * 1.1),
+    ]
+    self.color = 'gray'
+    
+  def updatePoints(self):
+    s = self.size
+    self.points = [
+      (0, -s * 1.5),
+      (s * 1.1, -s * 1.1),
+      (s * 1.5, 0),
+      (s * 1.1, s * 1.1),
+      (0, s * 1.5),
+      (-s * 1.1, s * 1.1),
+      (-s * 1.5, 0),
+      (-s * 1.1, -s * 1.1),
+    ]
+  def update(self, delta):
+    pass
+
+  def draw(self):
+    renderer.world_polygon(
+      [(self.x + dx, self.y + dy) for dx, dy in self.points], self.color
+    )
 
 class Bird(WorldObject):
   def __init__(self, x, y):
@@ -328,6 +407,8 @@ class Bird(WorldObject):
     self.insideTileX = 0
     self.insideTileY = 0
     self.isNearDoor = False
+    self.lastX = x
+    self.lastY = y
 
   def revertPosition(self):
     # Revert the position of the bird to the last position
@@ -430,6 +511,46 @@ class Bird(WorldObject):
 
     # renderer.img(self.img, self.x, self.y, self.size)
 
+class Decoration(WorldObject):
+  def __init__(self, x, y, decorIndex=0):
+    super().__init__(x, y)
+    self.decorIndex = decorIndex
+    self.image = renderer.load_image(f'decor-{decorIndex}.png')
+    self.size = 1
+
+  def update(self, delta):
+    pass
+  
+  def updatePoints(self):
+    self.decorIndex = min(max(0, self.decorIndex), 2)
+    self.image = renderer.load_image(f'decor-{self.decorIndex}.png')
+
+  def draw(self):
+    renderer.world_img(self.image, self.x - self.size / 2,
+                       self.y - self.size / 2, self.size)
+    
+class RectRoom(WorldObject):
+  def __init__(self, x, y, x2=None, y2=None):
+    super().__init__(x, y)
+    self.x2 = x2
+    self.y2 = y2
+    self.color = '#333'
+
+  def update(self, delta):
+    pass
+  
+  def updatePoints(self):
+    if self.x2 < self.x:
+      self.x, self.x2 = self.x2, self.x
+    if self.y2 < self.y:
+      self.y, self.y2 = self.y2, self.y
+
+  def draw(self):
+    
+    if self.x2 == None:
+      renderer.world_rect(self.x, self.y, 1,1, self.color)
+    else:
+      renderer.world_rect(self.x, self.y, self.x2 - self.x, self.y2 - self.y, self.color)
 
 class StoryController:
   def __init__(self):
@@ -466,12 +587,16 @@ class LevelEditor:
       # Name, image, class, arg1, arg2
       ['Bird (me)', 'bird.png', Bird],
       ['Bird (friend)', 'bird.png', Bird],
-      ['Blue Ship', None, BlueMothership, 'y-size', 'x-size2'],
-      ['Ship', None, Ship],
+      ['Alliance Mothership', None, AllianceMotherShip, 'y-size', 'x-size2'],
+      ['Enemy Mothership', None, EnemyMotherShip, 'x-size'],
+      ['Alliance Ship', None, lambda x,y:Ship(x, y, 'Basic')],
+      ['Small Enemy Ship', None, SmallEnemyShip],
       ['Collision wall', None, CollisionWall, 'xy-x2-y2'],
-      # ['Blue Ship', None, BlueMothership],
-      # ['Blue Ship', None, BlueMothership],
-      # ['Blue Ship', None, BlueMothership],
+      ['Decoration', None, Decoration, 'y-decorIndex'],
+      ['Rect. room', None, RectRoom, 'xy-x2-y2'],
+      ['Turret Station', None, TurretStation],
+      ['Turret', None, Turret],
+      
 
     ]
     for o in self.options:
@@ -483,6 +608,30 @@ class LevelEditor:
     self.argStep = 0
 
   def update(self, delta):
+    if keys.get('p', False):
+      print('# Level code:')
+      keys['p'] = False
+      for obj in objs:
+        corrospondingOp = None
+        for op in self.options:
+          if obj.__class__ == op[2]:
+            corrospondingOp = op
+            break
+        if corrospondingOp:
+          print(f"{op[2].__name__}({obj.x}, {obj.y}", end="")
+          args = corrospondingOp[3:]
+          for arg in args:
+            argParts = arg.split('-')
+            if len(argParts) > 2:
+              arg1 = argParts[1]
+              arg2 = argParts[2]
+              if hasattr(obj, arg):
+                print(f", {getattr(obj, arg1)}-{getattr(obj, arg2)}", end="")
+            else:
+              arg1 = argParts[1]
+              print(f", {getattr(obj, arg1)}", end="")
+          print(")")
+          
     pass
 
   def draw(self):
@@ -496,6 +645,7 @@ class LevelEditor:
         self.ghost.y = round(renderer.RevY(mouse['y']))
         renderer.text(10, 140, f"Click to place\nX: {self.ghost.x}\nY: {self.ghost.y}", 'white')
       else:
+        print(op, self.argStep)
         dir, arg, *arg2 = op[self.argStep + 2].split("-")
         s = 0
         s2 = 0
@@ -524,7 +674,7 @@ class LevelEditor:
       
       if mouse['left']:
         mouse['left'] = False
-        print(len(op)-3, self.argStep)
+        # print(len(op)-3, self.argStep)
         if len(op) - 3 > self.argStep: # keep going
           self.argStep += 1
         else:
@@ -543,7 +693,7 @@ class LevelEditor:
     y = 50
     for i in range(len(self.options)):
       option = self.options[i]
-      if mouse['x'] > x - 26 and mouse['x'] < x + 26 and mouse['y'] > y - 26 and mouse['y'] < y + 26:
+      if self.mode == 'none' and mouse['x'] > x - 26 and mouse['x'] < x + 26 and mouse['y'] > y - 26 and mouse['y'] < y + 26:
         self.hovering = i
         
         mouse['cursor'] = 'hand2'
@@ -718,7 +868,7 @@ class GameManager:
     w = window['width']
     h = window['height']
     if scene == "menu":
-      MenuText( w / 2, h / 2 - 120,"Birds in Space", "white", True)
+      MenuText( w / 2, h / 2 - 120,"Birds in Space", "#98F5F9", True)
       MenuOption("Start Game", w / 2, h / 2 - 20,
                  lambda: self.change_scene("game"))
       MenuOption("Level Editor", w / 2, h / 2 + 30,
@@ -732,7 +882,7 @@ class GameManager:
       for i in range(100):
         DebugCircle()
 
-      BlueMothership(0, 0)
+      AllianceMotherShip(0, 0)
       # for x in range(-10, -5):
       #   for y in range(5, 10):
       #     if x % 2 == y % 2:

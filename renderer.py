@@ -2,6 +2,7 @@ from PIL import Image, ImageDraw, ImageTk, ImageFont
 import tkinter as tk
 import math
 
+large_font = ImageFont.truetype("cour.ttf", 50)
 
 class Renderer:
   def __init__(self, root, window):
@@ -100,8 +101,8 @@ class Renderer:
     self.draw.text((x, y), text, fill=color, align="center", anchor="mm")
     
   def text_center_very_large(self, x, y, text, color):
-    font = ImageFont.truetype("cour.ttf", 50)
-    self.draw.text((x, y), text, fill=color, align="center", anchor="mm", font=font)
+    
+    self.draw.text((x, y), text, fill=color, align="center", anchor="mm", font=large_font)
 
   def img(self, img, x, y, size):
     h = size * img.size[1] / img.size[0]
@@ -129,6 +130,10 @@ class Renderer:
 
   def world_circle(self, x, y, r, color):
     self.circle(self.X(x), self.Y(y), self.S(r), color)
+    
+    
+  # def world_text_center(self, x, y, text, color):
+    # self.draw.text((x, y), text, fill=color, align="center", anchor="mm")
 
   def world_img(self, img, x, y, size):
     if x < self.cullX1 or x > self.cullX2 or y < self.cullY1 or y > self.cullY2:
