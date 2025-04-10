@@ -585,15 +585,14 @@ class LevelEditor:
   def __init__(self):
     self.options = [
       # Name, image, class, arg1, arg2
-      ['Bird (me)', 'bird.png', Bird],
-      ['Bird (friend)', 'bird.png', Bird],
-      ['Alliance Mothership', None, AllianceMotherShip, 'y-size', 'x-size2'],
+      ['Bird', 'bird.png', Bird],
+      ['Ally Mothership', None, AllianceMotherShip, 'y-size', 'x-size2'],
       ['Enemy Mothership', None, EnemyMotherShip, 'x-size'],
-      ['Alliance Ship', None, lambda x,y:Ship(x, y, 'Basic')],
-      ['Small Enemy Ship', None, SmallEnemyShip],
-      ['Collision wall', None, CollisionWall, 'xy-x2-y2'],
-      ['Decoration', None, Decoration, 'y-decorIndex'],
-      ['Rect. room', None, RectRoom, 'xy-x2-y2'],
+      ['Ally Ship', None, lambda x,y:Ship(x, y, 'Basic')],
+      ['Enemy Ship', None, SmallEnemyShip],
+      ['Collision', None, CollisionWall, 'xy-x2-y2'],
+      ['Decor', None, Decoration, 'y-decorIndex'],
+      ['Rect. Room', None, RectRoom, 'xy-x2-y2'],
       ['Turret Station', None, TurretStation],
       ['Turret', None, Turret],
       
@@ -635,7 +634,21 @@ class LevelEditor:
     pass
 
   def draw(self):
-    # print('hi')
+    
+    # Draw a grid over everything
+    x1 = x1s = math.floor(renderer.RevX(0))
+    y1 = math.floor(renderer.RevY(0))
+    x2 = math.floor(renderer.RevX(window['width']))
+    y2 = math.floor(renderer.RevY(window['height']))
+    gridlineWidth = 1
+    while x1 < x2:
+      renderer.world_line(x1, y1, x1, y2, '#222', renderer.RevS(gridlineWidth))
+      x1 += 1
+    x1 = x1s
+    while y1 < y2:
+      renderer.world_line(x1, y1, x2, y1, '#222', renderer.RevS(gridlineWidth))
+      y1 += 1
+      
     op = self.options[self.hovering]
     if self.mode == "none":
       pass
@@ -645,7 +658,7 @@ class LevelEditor:
         self.ghost.y = round(renderer.RevY(mouse['y']))
         renderer.text(10, 140, f"Click to place\nX: {self.ghost.x}\nY: {self.ghost.y}", 'white')
       else:
-        print(op, self.argStep)
+        # print(op, self.argStep)
         dir, arg, *arg2 = op[self.argStep + 2].split("-")
         s = 0
         s2 = 0
@@ -654,18 +667,18 @@ class LevelEditor:
         if dir == 'x':
           s = round(renderer.RevX(mouse['x']) - self.ghost.x)
           setattr(self.ghost, arg, s)        
-          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttribute: {arg}\nValue: {s}", 'white')
+          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
         elif dir == 'y':
           s = round(renderer.RevY(mouse['y']) - self.ghost.y)
           setattr(self.ghost, arg, s)
-          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttribute: {arg}\nValue: {s}", 'white')
+          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
         elif dir == 'xy':
           s = round(renderer.RevX(mouse['x']))
           s2 = round(renderer.RevY(mouse['y']))
           # print(s, s2, arg, arg2)
           setattr(self.ghost, arg, s)
           setattr(self.ghost, arg2, s2)
-          renderer.text(10, 140, f"Click to set attribute\nDirection: {dir}\nAttributes: {arg}, {arg2}\nValue: {s}, {s2}", 'white')
+          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}, {arg2}\nValue: {s}, {s2}", 'white')
 
         if hasattr(self.ghost, 'updatePoints'):
           self.ghost.updatePoints()
@@ -703,16 +716,18 @@ class LevelEditor:
           self.ghost = option[2](0, 0)
           
           
-        renderer.rect(x - 26, y - 26, x + 26, y + 26, '#1a1')
+        renderer.rect(x - 22, y - 22, x + 22, y + 22, '#1a1')
       else:
-        renderer.rect(x - 26, y - 26, x + 26, y + 26, '#222')
+        renderer.rect(x - 22, y - 22, x + 22, y + 22, '#222')
       if option[1]:
         renderer.img(option[1], x - 10, y - 10, 20)
-      else:
-        renderer.text_center(x, y, option[0], 'white')
+      renderer.text_center(x, y-17, option[0], 'white')
       # Show how many options are available
-      renderer.text_center(x, y + 20, str(len(option)-3), 'white')
+      if len(option) > 3:
+        renderer.text_center(x+6, y + 17, f'+{len(option)-3} args', 'white')
       y += 50
+      
+
 
 
 # Constants
