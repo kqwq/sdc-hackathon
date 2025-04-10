@@ -643,11 +643,11 @@ class LevelEditor:
     gridlineWidth = 1
     while x1 < x2:
       renderer.world_line(x1, y1, x1, y2, '#222', renderer.RevS(gridlineWidth))
-      x1 += 1
+      x1 += 4
     x1 = x1s
     while y1 < y2:
       renderer.world_line(x1, y1, x2, y1, '#222', renderer.RevS(gridlineWidth))
-      y1 += 1
+      y1 += 4
       
     op = self.options[self.hovering]
     if self.mode == "none":
