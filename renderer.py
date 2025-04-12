@@ -2,7 +2,9 @@ from PIL import Image, ImageDraw, ImageTk, ImageFont
 import tkinter as tk
 import math
 
-large_font = ImageFont.truetype("cour.ttf", 50)
+large_font = ImageFont.truetype('cour', 17)
+very_large_font = ImageFont.truetype("cour.ttf", 50)
+dialog_font = ImageFont.truetype('cour.ttf', 25)
 
 class Renderer:
   def __init__(self, root, window):
@@ -87,6 +89,9 @@ class Renderer:
 
   def rect_outlined(self, x, y, w, h, color, outline):
     self.draw.rectangle([x, y, w, h], fill=color, outline=outline)
+    
+  def tri_outlined(self, x1, y1, x2, y2, x3, y3, color, outline):
+    self.draw.polygon([x1, y1, x2, y2, x3, y3], fill=color, outline=outline)
 
   def circle(self, x, y, r, color):
     self.draw.ellipse([x - r, y - r, x + r, y + r], fill=color, outline=color)
@@ -100,9 +105,14 @@ class Renderer:
   def text_center(self, x, y, text, color):
     self.draw.text((x, y), text, fill=color, align="center", anchor="mm")
     
-  def text_center_very_large(self, x, y, text, color):
-    
+  def text_center_large(self, x, y, text, color):
     self.draw.text((x, y), text, fill=color, align="center", anchor="mm", font=large_font)
+    
+  def text_center_very_large(self, x, y, text, color):
+    self.draw.text((x, y), text, fill=color, align="center", anchor="mm", font=very_large_font)
+    
+  def text_dialog(self, x, y, text, color):
+    self.draw.text((x, y), text, fill=color, font=dialog_font)
 
   def img(self, img, x, y, size):
     h = size * img.size[1] / img.size[0]

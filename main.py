@@ -31,7 +31,9 @@ DEBUG_MODE = False
 
 # Define various objects
 objs = []
-ships = []
+objsWithHP = []
+walls = []
+storyController = None
 
 
 class WorldObject:
@@ -50,10 +52,10 @@ class WorldObject:
 class LaserBeam(WorldObject):
   def __init__(self, x, y, theta):
     super().__init__(x, y)
-    self.speed = 50
+    self.speed = 120
     self.vx = math.cos(theta) * self.speed
     self.vy = math.sin(theta) * self.speed
-    self.length = 0.5
+    self.length = 2
     self.x2 = x + math.cos(theta) * self.length
     self.y2 = y + math.sin(theta) * self.length
     self.size = 0.03
@@ -178,9 +180,9 @@ class Tile(WorldObject):
 
 
 class Ship(WorldObject):
-  def __init__(self, x, y, name="Default"):
+  def __init__(self, x, y, name="Basic"):
     super().__init__(x, y)
-    ships.append(self)
+    objsWithHP.append(self)
     self.name = name
     self.tiles = []
     self.fuel = 10000
@@ -269,11 +271,17 @@ class Ship(WorldObject):
       if tile == 1:
         renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
 
+
 class CollisionWall(WorldObject):
   def __init__(self, x, y, x2=0, y2=0):
     super().__init__(x, y)
+    walls.append(self)
     self.x2 = x2
     self.y2 = y2
+    if self.x2 < self.x:
+      self.x, self.x2 = self.x2, self.x
+    if self.y2 < self.y:
+      self.y, self.y2 = self.y2, self.y
 
   def update(self, delta):
     pass
@@ -281,17 +289,64 @@ class CollisionWall(WorldObject):
   def draw(self):
     renderer.world_line(self.x, self.y, self.x2, self.y2, 'red', 0.1)
 
+
 class TurretStation(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
     self.radius = 0.85
     self.color = '#4030e0'
+    self.controls = None
+    for obj in objs:
+      if isinstance(obj, Turret) and obj.station == None:
+        self.controls = obj
+        obj.station = self
+        break
+    self.image = renderer.load_image('turret-station.png')
+    self.cockpit = None
+    self.size = 1
     
+    self.shootCooldown = 0
+    self.shootCooldownMax = 0.1
+    self.targetX = 0
+    self.targetY = 0
+    self.theta = 0
+    self.theta2 = 0
+    self.gotoTargetX = 0
+    self.gotoTargetY = 0
+
   def update(self, delta):
     pass
+  
+  def player_control(self, delta):
+    self.shootCooldown += delta
+    
+    distFromTurret = max(0, window['width']*3/4 - mouse['x'] ) / window['width'] * 850
+    self.theta = math.pi-(mouse['y'] / window['height'] - 0.5) * 2.5
+    self.gotoTargetX = self.controls.x + distFromTurret * math.cos(self.theta)
+    self.gotoTargetY = self.controls.y + distFromTurret * math.sin(self.theta)
+    self.targetX += (self.gotoTargetX - self.targetX) * 0.2
+    self.targetY += (self.gotoTargetY - self.targetY) * 0.2
+    self.theta2 = math.atan2(renderer.RevY(mouse['y']) - self.controls.y, renderer.RevX(mouse['x']) - self.controls.x)
+
+    
+    if mouse['left']:
+      if self.shootCooldown > self.shootCooldownMax and self.controls.x > renderer.RevX(mouse['x']):
+        self.shootCooldown = 0
+        
+        LaserBeam(self.controls.x, self.controls.y, self.theta2)        
+        
+
+    
+    # Jump out
+    elif keys.get('Return', False):
+      global me
+      keys['Return'] = False
+      me = self.cockpit
+      me.y += self.size / 2
 
   def draw(self):
-    renderer.world_circle(self.x, self.y, self.radius, self.color)
+    renderer.world_img(self.image, self.x - self.size/2, self.y - self.size/2, self.size)
+
 
 class Turret(WorldObject):
   def __init__(self, x, y):
@@ -299,8 +354,11 @@ class Turret(WorldObject):
     self.theta = 0
     self.radius = 1.45
     self.color = '#777777'
-    
+    self.station = None
+
   def update(self, delta):
+    if self.station:
+      self.theta = self.station.theta2
     pass
 
   def draw(self):
@@ -310,46 +368,50 @@ class Turret(WorldObject):
     barrel_width = 0.1
     barrel_x = self.x + math.cos(self.theta) * barrel_length
     barrel_y = self.y + math.sin(self.theta) * barrel_length
-    renderer.world_line(self.x, self.y, barrel_x, barrel_y, 'red', barrel_width)
+    renderer.world_line(self.x, self.y, barrel_x,
+                        barrel_y, 'red', barrel_width)
+
 
 class SmallEnemyShip(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
-    
+
   def update(self, delta):
     pass
-  
+
   def draw(self):
     renderer.world_circle(self.x, self.y, 0.5, 'red')
     pass
 
+
 class AllianceMotherShip(WorldObject):
-  def __init__(self, x, y):
+  def __init__(self, x, y, s=1, sx=1):
     super().__init__(x, y)
     self.name = 'MotherShip'
-    self.size = s = 1
-    self.size2 = sx = 1
+    self.size = s
+    self.size2 = sx
     self.points = [
       (0, -s * 1.1),
-      (sx , -s ),
-      (sx , s ),
-      (0, s* 1.1),
-      (-sx , s ),
-      (-sx , -s ),
+      (sx, -s),
+      (sx, s),
+      (0, s * 1.1),
+      (-sx, s),
+      (-sx, -s),
     ]
     self.color = 'gray'
-    
+
   def updatePoints(self):
     s = self.size
     sx = self.size2
     self.points = [
       (0, -s * 1.1),
-      (sx , -s ),
-      (sx , s ),
-      (0, s* 1.1),
-      (-sx , s ),
-      (-sx , -s ),
+      (sx, -s),
+      (sx, s),
+      (0, s * 1.1),
+      (-sx, s),
+      (-sx, -s),
     ]
+
   def update(self, delta):
     pass
 
@@ -358,11 +420,12 @@ class AllianceMotherShip(WorldObject):
       [(self.x + dx, self.y + dy) for dx, dy in self.points], self.color
     )
 
+
 class EnemyMotherShip(WorldObject):
-  def __init__(self, x, y):
+  def __init__(self, x, y, s=1):
     super().__init__(x, y)
     self.name = 'EnemyMotherShip'
-    self.size = s = 1
+    self.size = s
     self.points = [
       (0, -s * 1.5),
       (s * 1.1, -s * 1.1),
@@ -374,7 +437,7 @@ class EnemyMotherShip(WorldObject):
       (-s * 1.1, -s * 1.1),
     ]
     self.color = 'gray'
-    
+
   def updatePoints(self):
     s = self.size
     self.points = [
@@ -387,6 +450,7 @@ class EnemyMotherShip(WorldObject):
       (-s * 1.5, 0),
       (-s * 1.1, -s * 1.1),
     ]
+
   def update(self, delta):
     pass
 
@@ -395,13 +459,14 @@ class EnemyMotherShip(WorldObject):
       [(self.x + dx, self.y + dy) for dx, dy in self.points], self.color
     )
 
+
 class Bird(WorldObject):
   def __init__(self, x, y):
     super().__init__(x, y)
     self.color = (255, 255, 0)  # Yellow color
-    self.size = 0.2
+    self.size = 0.4
     self.img = renderer.load_image('bird.png')
-    self.speed = 1
+    self.speed = 40
     self.flipped = False
     self.nearestShip = None
     self.insideTileX = 0
@@ -409,6 +474,7 @@ class Bird(WorldObject):
     self.isNearDoor = False
     self.lastX = x
     self.lastY = y
+    self.interactedWithBook = False
 
   def revertPosition(self):
     # Revert the position of the bird to the last position
@@ -438,78 +504,115 @@ class Bird(WorldObject):
     if keys.get('Return', False) and self.nearestShip:
       # Entering the ship
       keys['Return'] = False
-      self.x = self.nearestShip.chairX
-      self.y = self.nearestShip.chairY
+      # self.x = self.nearestShip.chairX
+      # self.y = self.nearestShip.chairY
       global me
       me = self.nearestShip
+      self.x = me.x
+      self.y = me.y
       self.nearestShip.cockpit = self
-      renderer.camGotoHt = max(0.05, renderer.camHt / 2)
 
-    if self.nearestShip:
-      hud.hintText = "Press <Enter> to control ship"
-    else:
-      hud.hintText = ""
+    # if self.nearestShip:
+    #   hud.hintText = "Press <Enter> to control ship"
+    # else:
+    #   hud.hintText = ""
 
   def update(self, delta):
     # if self.insideTile and self.insideTile.parent and not self.insideTile.parent.cockpit:
-    if self.nearestShip:
-      self.x += self.nearestShip.vx * delta
-      self.y += self.nearestShip.vy * delta
+    # if self.nearestShip:
+    #   self.x += self.nearestShip.vx * delta
+    #   self.y += self.nearestShip.vy * delta
 
+    self.nearestShip = None
     minDist = 1000
-    for ship in ships:
-      dist = math.dist((self.x, self.y), (ship.x, ship.y))
-      if dist < minDist:
-        minDist = dist
-        self.nearestShip = ship
+    for obj in objs:
+      if isinstance(obj, Ship) or isinstance(obj, TurretStation):
+        dist = math.dist((self.x, self.y), (obj.x, obj.y))
+        if dist < minDist and dist < 3:
+          minDist = dist
+          self.nearestShip = obj
 
-    # For nearest ship calculate the tile x and y
-    if self.nearestShip:
-      # Transform the coordinates to the ship's coordinates
-      x = self.x - self.nearestShip.x
-      y = self.y - self.nearestShip.y
-      self.insideTileX = x * self.nearestShip.ctheta + y * self.nearestShip.stheta
-      self.insideTileY = y * self.nearestShip.ctheta - x * self.nearestShip.stheta
-      # print(f"Inside tile: {self.insideTileX}, {self.insideTileY}")
+    # # For nearest ship calculate the tile x and y
+    # if self.nearestShip:
+    #   # Transform the coordinates to the ship's coordinates
+    #   x = self.x - self.nearestShip.x
+    #   y = self.y - self.nearestShip.y
+    #   self.insideTileX = x * self.nearestShip.ctheta + y * self.nearestShip.stheta
+    #   self.insideTileY = y * self.nearestShip.ctheta - x * self.nearestShip.stheta
+    #   # print(f"Inside tile: {self.insideTileX}, {self.insideTileY}")
 
-      # Check if bird is close to the tile's outline. If so, "push" the bird back perpendicular to the tile's outline
-    if self.nearestShip and not self.isNearDoor:
-      tolerance = self.size * 0.5
-      insideTile = False
-      ix = math.floor(self.insideTileX)
-      iy = math.floor(self.insideTileY)
-      # print(f"Tile: {ix}, {iy}")
-      if iy % 2 == 1:
-        ix -= 1
-        self.insideTileX -= 1
-      for tile in self.nearestShip.tiles:
-        if tile.y == iy and (tile.x == ix or tile.x == ix + 1):
-          insideTile = True
-          break
-      if insideTile:
-        fx = 0
-        if self.insideTileX % 2 < tolerance:
-          fx = 1
-        elif self.insideTileX % 2 > 2 - tolerance:
-          fx = -1
-        fy = 0
-        if self.insideTileY % 1 < tolerance:
-          fy = 1
-        elif self.insideTileY % 1 > 1 - tolerance:
-          fy = -1
-        if fx != 0 or fy != 0:
-          # Rotate the vector to the ship's coordinates
-          fx = fx * self.nearestShip.ctheta - fy * self.nearestShip.stheta
-          fy = fy * self.nearestShip.ctheta + fx * self.nearestShip.stheta
-          # Move the bird back
-          self.revertPosition()
-    self.isNearDoor = False
+    #   # Check if bird is close to the tile's outline. If so, "push" the bird back perpendicular to the tile's outline
+    # if self.nearestShip and not self.isNearDoor:
+    #   tolerance = self.size * 0.5
+    #   insideTile = False
+    #   ix = math.floor(self.insideTileX)
+    #   iy = math.floor(self.insideTileY)
+    #   # print(f"Tile: {ix}, {iy}")
+    #   if iy % 2 == 1:
+    #     ix -= 1
+    #     self.insideTileX -= 1
+    #   for tile in self.nearestShip.tiles:
+    #     if tile.y == iy and (tile.x == ix or tile.x == ix + 1):
+    #       insideTile = True
+    #       break
+    #   if insideTile:
+    #     fx = 0
+    #     if self.insideTileX % 2 < tolerance:
+    #       fx = 1
+    #     elif self.insideTileX % 2 > 2 - tolerance:
+    #       fx = -1
+    #     fy = 0
+    #     if self.insideTileY % 1 < tolerance:
+    #       fy = 1
+    #     elif self.insideTileY % 1 > 1 - tolerance:
+    #       fy = -1
+    #     if fx != 0 or fy != 0:
+    #       # Rotate the vector to the ship's coordinates
+    #       fx = fx * self.nearestShip.ctheta - fy * self.nearestShip.stheta
+    #       fy = fy * self.nearestShip.ctheta + fx * self.nearestShip.stheta
+    #       # Move the bird back
+    #       self.revertPosition()
+    # self.isNearDoor = False
+
+    # Collision with walls
+    for wall in walls:
+      if wall.x == wall.x2:  # Vertical wall
+        # If bird is above or below the wall, ignore
+        if self.y + self.size <= wall.y or self.y >= wall.y2:
+          continue
+        # If bird is inside the wall, push it back
+        if self.x + self.size > wall.x and self.x - self.size < wall.x:
+          if self.x < wall.x:
+            self.x = wall.x - self.size
+          else:
+            self.x = wall.x + self.size
+      else:
+        # If bird is left or right of the wall, ignore
+        if self.x + self.size <= wall.x or self.x >= wall.x2:
+          continue
+        # If bird is inside the wall, push it back
+        if self.y + self.size > wall.y and self.y - self.size < wall.y:
+          if self.y < wall.y:
+            self.y = wall.y - self.size
+          else:
+            self.y = wall.y + self.size
+
+    # Collision/interaction with the book
+    if math.dist((self.x, self.y), (bookOfAnswers.x, bookOfAnswers.y)) < 0.5:
+      if not self.interactedWithBook:
+        hud.setHintText("Press <Space> to interact")
+      if keys.get('space', False):
+        self.interactedWithBook = True
+        keys['space'] = False
+        storyController.setCurrentDialog(
+          storyController.bookDialog, "Click to turn to the next page")
 
   def draw(self):
     func = renderer.world_img_flipped if self.flipped else renderer.world_img
     func(self.img, self.x - self.size / 2, self.y - self.size / 2, self.size)
 
     # renderer.img(self.img, self.x, self.y, self.size)
+
 
 class Decoration(WorldObject):
   def __init__(self, x, y, decorIndex=0):
@@ -520,15 +623,16 @@ class Decoration(WorldObject):
 
   def update(self, delta):
     pass
-  
+
   def updatePoints(self):
-    self.decorIndex = min(max(0, self.decorIndex), 2)
+    self.decorIndex = min(max(0, self.decorIndex), 3)
     self.image = renderer.load_image(f'decor-{self.decorIndex}.png')
 
   def draw(self):
     renderer.world_img(self.image, self.x - self.size / 2,
                        self.y - self.size / 2, self.size)
-    
+
+
 class RectRoom(WorldObject):
   def __init__(self, x, y, x2=None, y2=None):
     super().__init__(x, y)
@@ -538,7 +642,7 @@ class RectRoom(WorldObject):
 
   def update(self, delta):
     pass
-  
+
   def updatePoints(self):
     if self.x2 < self.x:
       self.x, self.x2 = self.x2, self.x
@@ -546,25 +650,35 @@ class RectRoom(WorldObject):
       self.y, self.y2 = self.y2, self.y
 
   def draw(self):
-    
+
     if self.x2 == None:
-      renderer.world_rect(self.x, self.y, 1,1, self.color)
+      renderer.world_rect(self.x, self.y, 1, 1, self.color)
     else:
-      renderer.world_rect(self.x, self.y, self.x2 - self.x, self.y2 - self.y, self.color)
+      renderer.world_rect(self.x, self.y, self.x2 - self.x,
+                          self.y2 - self.y, self.color)
+
 
 class StoryController:
   def __init__(self):
+    objs.append(self)
     self.storyStep = 0
+    self.inDialog = True
+    self.currentDialog = []
     self.startDialog = [
+      ["bird2", "Welcome to Birds in Space!"],
       ["me", "Where am I?"],
-      ["bird2", "You are on our home ship. We are in the middle of an intense space battle. We need your help to win."],
+      ["bird2", "You are on our home ship.\nWe are in the middle of an intense\nspace battle.\nWe need your help to win."],
       ["me", "My help?"],
-      ["bird2", "Yes. You were unfrozen from cryostasis."],
+      ["bird2", "Yes. You were unfrozen from\ncryostasis."],
       ["me", "Huh?"],
       ["bird2", "Don't you remember?"],
       ["me", "Not really..."],
       ["bird2", "Well then, we are all going to die."],
-      ["system", "Use the <WASD> keys to move, <Enter> to interact with objects, and <Left Click> to shoot."]
+      ["system", "Use the <WASD> keys to move.\nExplore your surroundings."]
+    ]
+    self.bookDialog = [
+      ["system", "You can't win this battle alone."],
+      ["system", "Legend says that can talk to other birds with <Space>."],
     ]
     self.askForHelpDialog = [
       ["me", "Please help me out."],
@@ -579,6 +693,42 @@ class StoryController:
       ["bird2", "We won! Two is tougher!"],
       ["system", "You have won the battle."]
     ]
+    self.setCurrentDialog(self.startDialog)
+
+  def setCurrentDialog(self, dialogObj, hintText="Click to advance story"):
+    hud.setHintText(hintText)
+    self.currentDialog = dialogObj
+    self.storyStep = 0
+    self.inDialog = True
+
+  def update(self, delta):
+    if self.inDialog:
+      if mouse['left']:
+        mouse['left'] = False
+        self.storyStep += 1
+        if self.storyStep > len(self.currentDialog) - 1:
+          self.inDialog = False
+          hud.setHintText("")
+
+  def draw(self):
+    if self.inDialog:
+      speaker = self.currentDialog[self.storyStep][0]
+      text = self.currentDialog[self.storyStep][1]
+      target = None
+
+      # Draw text box at bottom
+      renderer.rect_outlined(
+        10, window['height'] - 150, window['width'] - 20, window['height'] - 30, 'white', 'black')
+      renderer.text_dialog(20, window['height'] - 140, text, 'black')
+
+      # Triangle part of speech bubble
+      if speaker == 'me' or speaker == 'bird2':
+        w = window['width'] / 3
+        h = window['height'] - 150
+        target = me if speaker == 'me' else bird2
+        renderer.tri_outlined(
+          w - 10, h, w + 10, h, renderer.X(target.x), renderer.Y(target.y), 'white', 'black')
+        renderer.line(w - 10, h, w + 10, h, 'white', 2)
 
 
 class LevelEditor:
@@ -588,14 +738,14 @@ class LevelEditor:
       ['Bird', 'bird.png', Bird],
       ['Ally Mothership', None, AllianceMotherShip, 'y-size', 'x-size2'],
       ['Enemy Mothership', None, EnemyMotherShip, 'x-size'],
-      ['Ally Ship', None, lambda x,y:Ship(x, y, 'Basic')],
+      ['Ally Ship', None, Ship],
       ['Enemy Ship', None, SmallEnemyShip],
       ['Collision', None, CollisionWall, 'xy-x2-y2'],
       ['Decor', None, Decoration, 'y-decorIndex'],
       ['Rect. Room', None, RectRoom, 'xy-x2-y2'],
       ['Turret Station', None, TurretStation],
       ['Turret', None, Turret],
-      
+
 
     ]
     for o in self.options:
@@ -624,17 +774,19 @@ class LevelEditor:
             if len(argParts) > 2:
               arg1 = argParts[1]
               arg2 = argParts[2]
-              if hasattr(obj, arg):
-                print(f", {getattr(obj, arg1)}-{getattr(obj, arg2)}", end="")
+              if hasattr(obj, arg1):
+                print(f", {getattr(obj, arg1)}", end="")
+              if hasattr(obj, arg2):
+                print(f", {getattr(obj, arg2)}", end="")
             else:
               arg1 = argParts[1]
               print(f", {getattr(obj, arg1)}", end="")
           print(")")
-          
+
     pass
 
   def draw(self):
-    
+
     # Draw a grid over everything
     x1 = x1s = math.floor(renderer.RevX(0))
     y1 = math.floor(renderer.RevY(0))
@@ -648,7 +800,7 @@ class LevelEditor:
     while y1 < y2:
       renderer.world_line(x1, y1, x2, y1, '#222', renderer.RevS(gridlineWidth))
       y1 += 4
-      
+
     op = self.options[self.hovering]
     if self.mode == "none":
       pass
@@ -656,7 +808,8 @@ class LevelEditor:
       if self.argStep == 0:
         self.ghost.x = round(renderer.RevX(mouse['x']))
         self.ghost.y = round(renderer.RevY(mouse['y']))
-        renderer.text(10, 140, f"Click to place\nX: {self.ghost.x}\nY: {self.ghost.y}", 'white')
+        renderer.text(
+          10, 140, f"Click to place\nX: {self.ghost.x}\nY: {self.ghost.y}", 'white')
       else:
         # print(op, self.argStep)
         dir, arg, *arg2 = op[self.argStep + 2].split("-")
@@ -666,29 +819,30 @@ class LevelEditor:
           arg2 = arg2[0]
         if dir == 'x':
           s = round(renderer.RevX(mouse['x']) - self.ghost.x)
-          setattr(self.ghost, arg, s)        
-          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
+          setattr(self.ghost, arg, s)
+          renderer.text(
+            10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
         elif dir == 'y':
           s = round(renderer.RevY(mouse['y']) - self.ghost.y)
           setattr(self.ghost, arg, s)
-          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
+          renderer.text(
+            10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}\nValue: {s}", 'white')
         elif dir == 'xy':
           s = round(renderer.RevX(mouse['x']))
           s2 = round(renderer.RevY(mouse['y']))
           # print(s, s2, arg, arg2)
           setattr(self.ghost, arg, s)
           setattr(self.ghost, arg2, s2)
-          renderer.text(10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}, {arg2}\nValue: {s}, {s2}", 'white')
+          renderer.text(
+            10, 140, f"Click to set argument\nDirection: {dir}\nArgument: {arg}, {arg2}\nValue: {s}, {s2}", 'white')
 
         if hasattr(self.ghost, 'updatePoints'):
           self.ghost.updatePoints()
 
-      
-      
       if mouse['left']:
         mouse['left'] = False
         # print(len(op)-3, self.argStep)
-        if len(op) - 3 > self.argStep: # keep going
+        if len(op) - 3 > self.argStep:  # keep going
           self.argStep += 1
         else:
           self.mode = "none"
@@ -708,26 +862,24 @@ class LevelEditor:
       option = self.options[i]
       if self.mode == 'none' and mouse['x'] > x - 26 and mouse['x'] < x + 26 and mouse['y'] > y - 26 and mouse['y'] < y + 26:
         self.hovering = i
-        
+
         mouse['cursor'] = 'hand2'
         if self.mode == 'none' and mouse['left']:
           mouse['left'] = False
           self.mode = 'placing'
           self.ghost = option[2](0, 0)
-          
-          
+
         renderer.rect(x - 22, y - 22, x + 22, y + 22, '#1a1')
       else:
         renderer.rect(x - 22, y - 22, x + 22, y + 22, '#222')
       if option[1]:
         renderer.img(option[1], x - 10, y - 10, 20)
-      renderer.text_center(x, y-17, option[0], 'white')
+      renderer.text_center(x, y - 17, option[0], 'white')
       # Show how many options are available
       if len(option) > 3:
-        renderer.text_center(x+6, y + 17, f'+{len(option)-3} args', 'white')
+        renderer.text_center(
+          x + 6, y + 17, f'+{len(option) - 3} args', 'white')
       y += 50
-      
-
 
 
 # Constants
@@ -748,6 +900,8 @@ window = {
   'height': 600
 }
 me = None
+bird2 = None
+bookOfAnswers = None
 
 # Define renderer
 renderer = renderer.Renderer(root, window)
@@ -773,6 +927,8 @@ class DebugCircle():
     renderer.world_circle(self.x, self.y, self.r, self.color)
 
 # Define UI elements
+
+
 class MenuText:
   def __init__(self, x, y, text, color, isVeryLarge=False):
     objs.append(self)
@@ -841,13 +997,16 @@ class HUD:
   def __init__(self):
     self.hintText = ""  # text that appears at the bottom e.g. "Press <Enter> to control ship"
 
+  def setHintText(self, hintText):
+    self.hintText = hintText
+
   def update(self, delta):
     pass
 
   def draw(self):
     # Draw the hint text at the bottom of the screen
-    renderer.text_center(window['width'] / 2,
-                         window['height'] - 20, self.hintText, "white")
+    renderer.text_center_large(window['width'] / 2,
+                               window['height'] - 15, self.hintText, "white")
 
 
 hud = HUD()
@@ -883,7 +1042,7 @@ class GameManager:
     w = window['width']
     h = window['height']
     if scene == "menu":
-      MenuText( w / 2, h / 2 - 120,"Birds in Space", "#98F5F9", True)
+      MenuText(w / 2, h / 2 - 120, "Birds in Space", "#98F5F9", True)
       MenuOption("Start Game", w / 2, h / 2 - 20,
                  lambda: self.change_scene("game"))
       MenuOption("Level Editor", w / 2, h / 2 + 30,
@@ -897,29 +1056,129 @@ class GameManager:
       for i in range(100):
         DebugCircle()
 
-      AllianceMotherShip(0, 0)
-      # for x in range(-10, -5):
-      #   for y in range(5, 10):
-      #     if x % 2 == y % 2:
-      #       Tile(None, x, y, 'ap' if random.random() > 0.5 else 'engine')
-
-      Ship(0, 0, 'My-ship').convertToBasicShip()
-
+      AllianceMotherShip(0, -12, 50, 25)
+      RectRoom(-23, -60, 22, -51)
+      RectRoom(-1, -51, 2, 27)
+      RectRoom(-16, 27, 16, 36)
+      RectRoom(-19, 12, -8, 22)
+      RectRoom(-8, 12, -1, 14)
+      RectRoom(-25, -23, -8, 8)
+      RectRoom(-8, -18, -1, -16)
+      CollisionWall(-25, -23, -8, -23)
+      CollisionWall(-8, -23, -8, -18)
+      CollisionWall(-8, -18, -1, -18)
+      CollisionWall(-1, -18, -1, -51)
+      CollisionWall(-1, -51, -23, -51)
+      CollisionWall(-23, -51, -23, -60)
+      CollisionWall(-23, -60, 22, -60)
+      CollisionWall(22, -60, 22, -51)
+      CollisionWall(22, -51, 2, -51)
+      CollisionWall(2, -51, 2, 27)
+      CollisionWall(2, 27, 16, 27)
+      CollisionWall(16, 27, 16, 36)
+      CollisionWall(16, 36, -16, 36)
+      CollisionWall(-16, 36, -16, 27)
+      CollisionWall(-16, 27, -1, 27)
+      CollisionWall(-1, 27, -1, 14)
+      CollisionWall(-1, 14, -8, 14)
+      CollisionWall(-8, 14, -8, 22)
+      CollisionWall(-8, 22, -19, 22)
+      CollisionWall(-19, 22, -19, 12)
+      CollisionWall(-19, 12, -1, 12)
+      CollisionWall(-1, 12, -1, -16)
+      CollisionWall(-1, -16, -8, -16)
+      CollisionWall(-8, -16, -8, 8)
+      CollisionWall(-8, 8, -25, 8)
+      Turret(-22, -27)
+      Turret(-22, 12)
+      Turret(-22, -48)
+      Turret(-22, 32)
+      TurretStation(-18, -58)
+      TurretStation(-10, -58)
+      TurretStation(11, -58)
+      TurretStation(18, -58)
+      Decoration(-9, 21, 0)
+      Decoration(-18, 21, 0)
       global me
-      me = Bird(0.1, 0.1)
+      me = Bird(-18, -58)
+      # me = Bird(-16.0, 18.0)
+      global bird2
+      bird2 = Bird(-11.0, 17.0)
+      EnemyMotherShip(-582, -24, 22)
+      Turret(-554, -24)
+      Turret(-563, -46)
+      Turret(-563, -2)
+      Ship(-21.0, -17.0)
+      Ship(-19.0, -1.0)
+      global bookOfAnswers
+      bookOfAnswers = Decoration(14, 33, 3)
+      global storyController
+      storyController = StoryController()
+
+      # me = Bird(0.1, 0.1)
 
     elif scene == "level_editor":
       for i in range(5):
         DebugCircle()
-      
+      AllianceMotherShip(0, -12, 50, 25)
+      RectRoom(-23, -60, 22, -51)
+      RectRoom(-1, -51, 2, 27)
+      RectRoom(-16, 27, 16, 36)
+      RectRoom(-19, 12, -8, 22)
+      RectRoom(-8, 12, -1, 14)
+      RectRoom(-25, -23, -8, 8)
+      RectRoom(-8, -18, -1, -16)
+      CollisionWall(-25, -23, -8, -23)
+      CollisionWall(-8, -23, -8, -18)
+      CollisionWall(-8, -18, -1, -18)
+      CollisionWall(-1, -18, -1, -51)
+      CollisionWall(-1, -51, -23, -51)
+      CollisionWall(-23, -51, -23, -60)
+      CollisionWall(-23, -60, 22, -60)
+      CollisionWall(22, -60, 22, -51)
+      CollisionWall(22, -51, 2, -51)
+      CollisionWall(2, -51, 2, 27)
+      CollisionWall(2, 27, 16, 27)
+      CollisionWall(16, 27, 16, 36)
+      CollisionWall(16, 36, -16, 36)
+      CollisionWall(-16, 36, -16, 27)
+      CollisionWall(-16, 27, -1, 27)
+      CollisionWall(-1, 27, -1, 14)
+      CollisionWall(-1, 14, -8, 14)
+      CollisionWall(-8, 14, -8, 22)
+      CollisionWall(-8, 22, -19, 22)
+      CollisionWall(-19, 22, -19, 12)
+      CollisionWall(-19, 12, -1, 12)
+      CollisionWall(-1, 12, -1, -16)
+      CollisionWall(-1, -16, -8, -16)
+      CollisionWall(-8, -16, -8, 8)
+      CollisionWall(-8, 8, -25, 8)
+      TurretStation(-18, -58)
+      TurretStation(-10, -58)
+      TurretStation(11, -58)
+      TurretStation(18, -58)
+      Turret(-22, -27)
+      Turret(-22, 12)
+      Turret(-22, -48)
+      Turret(-22, 32)
+      Decoration(-9, 21, 0)
+      Decoration(-18, 21, 0)
+      EnemyMotherShip(-582, -24, 22)
+      Turret(-554, -24)
+      Turret(-563, -46)
+      Turret(-563, -2)
+      Ship(-21.0, -17.0)
+      Ship(-19.0, -1.0)
+
     elif scene == "credits":
       MenuOption("Back to Menu", w / 2, h / 2 + 120,
                  lambda: self.change_scene("menu"))
       MenuText(w / 2, h / 2 - 35, "Created by: <unknown>", "white")
-      MenuText(w / 2, h / 2 - 15, "Special thanks to Loc and the Software Development Club for hosting this hackathon.", "gold")
-      MenuText(w / 2, h / 2 + 5, "This game was created in 2 weeks in Python and Tkinter.", "white")
+      MenuText(w / 2, h / 2 - 15,
+               "Special thanks to Loc and the Software Development Club for hosting this hackathon.", "gold")
+      MenuText(w / 2, h / 2 + 5,
+               "This game was created in 2 weeks in Python and Tkinter.", "white")
       MenuText(w / 2, h / 2 + 25, "Thanks for playing!", "white")
-
 
   def preupdate(self):
     mouse['cursor'] = 'arrow'
@@ -970,7 +1229,7 @@ def mainloop():
   gameManager.preupdate()
   if me:
     me.player_control(delta)
-    
+
   for i in range(len(objs) - 1, -1, -1):
     objs[i].update(delta)
   gameManager.postupdate()
@@ -979,8 +1238,12 @@ def mainloop():
     renderer.levelEditorControls(mouse, keys)
     le.update(delta)
   elif gameManager.scene_name == "game":
-    renderer.camX = me.x
-    renderer.camY = me.y
+    if isinstance(me, TurretStation):
+      renderer.camX = me.targetX
+      renderer.camY = me.targetY
+    else:
+      renderer.camX = me.x
+      renderer.camY = me.y
   hud.update(delta)
 
   # Draw game state
