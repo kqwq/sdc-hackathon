@@ -287,7 +287,7 @@ class CollisionWall(WorldObject):
     pass
 
   def draw(self):
-    renderer.world_line(self.x, self.y, self.x2, self.y2, 'red', 0.1)
+    renderer.world_line(self.x, self.y, self.x2, self.y2, '#060270', 0.1)
 
 
 class TurretStation(WorldObject):
@@ -313,6 +313,7 @@ class TurretStation(WorldObject):
     self.theta2 = 0
     self.gotoTargetX = 0
     self.gotoTargetY = 0
+    self.maxCamHt = 0.15
 
   def update(self, delta):
     pass
@@ -461,12 +462,12 @@ class EnemyMotherShip(WorldObject):
 
 
 class Bird(WorldObject):
-  def __init__(self, x, y):
+  def __init__(self, x, y, img="bird.png"):
     super().__init__(x, y)
     self.color = (255, 255, 0)  # Yellow color
-    self.size = 0.4
-    self.img = renderer.load_image('bird.png')
-    self.speed = 40
+    self.size = 0.65
+    self.img = renderer.load_image(img)
+    self.speed = 4
     self.flipped = False
     self.nearestShip = None
     self.insideTileX = 0
@@ -475,6 +476,9 @@ class Bird(WorldObject):
     self.lastX = x
     self.lastY = y
     self.interactedWithBook = False
+    self.maxCamHt = 0.04
+    self.follower = None # Bird object that follows this bird
+    self.followerDistance = 0.5
 
   def revertPosition(self):
     # Revert the position of the bird to the last position
@@ -496,9 +500,13 @@ class Bird(WorldObject):
     if keys.get('d', False):
       vx += self.speed * delta
       self.flipped = True
+    if keys.get('Shift_L', False):
+      self.speed = 50 # for debuggin
+      
     if abs(vx) and abs(vy):
       vx *= math.sqrt(2) / 2
       vy *= math.sqrt(2) / 2
+    
     self.x += vx
     self.y += vy
     if keys.get('Return', False) and self.nearestShip:
@@ -512,10 +520,30 @@ class Bird(WorldObject):
       self.y = me.y
       self.nearestShip.cockpit = self
 
-    # if self.nearestShip:
-    #   hud.hintText = "Press <Enter> to control ship"
-    # else:
-    #   hud.hintText = ""
+    if self.follower == None:
+      # Collision/interaction with the book
+      if math.dist((self.x, self.y), (bookOfAnswers.x, bookOfAnswers.y)) < 2:
+        if not self.interactedWithBook:
+          hud.setHintText("Press <Space> to interact")
+        if keys.get('space', False):
+          self.interactedWithBook = True
+          keys['space'] = False
+          storyController.setCurrentDialog(
+            storyController.bookDialog, "Click to turn to the next page")
+          
+      # Interaction with bird2
+      elif math.dist((self.x, self.y), (bird2.x, bird2.y)) < 2:
+        if self.interactedWithBook:
+          hud.setHintText("Press <Space> to ask for help")
+        if keys.get('space', False):
+          self.interactedWithBook = True
+          keys['space'] = False
+          storyController.setCurrentDialog(
+            storyController.askForHelpDialog, "Click to advance story")
+          self.follower = bird2
+          
+      else:
+        hud.setHintText("")
 
   def update(self, delta):
     # if self.insideTile and self.insideTile.parent and not self.insideTile.parent.cockpit:
@@ -597,15 +625,8 @@ class Bird(WorldObject):
           else:
             self.y = wall.y + self.size
 
-    # Collision/interaction with the book
-    if math.dist((self.x, self.y), (bookOfAnswers.x, bookOfAnswers.y)) < 0.5:
-      if not self.interactedWithBook:
-        hud.setHintText("Press <Space> to interact")
-      if keys.get('space', False):
-        self.interactedWithBook = True
-        keys['space'] = False
-        storyController.setCurrentDialog(
-          storyController.bookDialog, "Click to turn to the next page")
+
+
 
   def draw(self):
     func = renderer.world_img_flipped if self.flipped else renderer.world_img
@@ -667,27 +688,27 @@ class StoryController:
     self.startDialog = [
       ["bird2", "Welcome to Birds in Space!"],
       ["me", "Where am I?"],
-      ["bird2", "You are on our home ship.\nWe are in the middle of an intense\nspace battle.\nWe need your help to win."],
+      ["bird2", "You are on our home ship.\nWe are in the middle of an expansive\nspace battle.\nWe need your help to win."],
       ["me", "My help?"],
       ["bird2", "Yes. You were unfrozen from\ncryostasis."],
       ["me", "Huh?"],
       ["bird2", "Don't you remember?"],
       ["me", "Not really..."],
       ["bird2", "Well then, we are all going to die."],
-      ["system", "Use the <WASD> keys to move.\nExplore your surroundings."]
+      ["system", "Use the <WASD> keys to move.\nExplore your surroundings.\nDefeat the octagon-shaped enemy\nspaceship."],
     ]
     self.bookDialog = [
       ["system", "You can't win this battle alone."],
-      ["system", "Legend says that can talk to other birds with <Space>."],
+      ["system", "Tip: You can talk to other birds\nby pressing <Space> when nearby."],
     ]
     self.askForHelpDialog = [
       ["me", "Please help me out."],
       ["bird2", "Why?"],
       ["me", "Because two is tougher than one."],
-      ["bird2", "That's so corny."],
-      ["me", "I know, but it's our only chance at winning this battle.."],
+      ["bird2", "???"],
+      ["me", "I know, it's corny but it's our ONLY\nchance at winning this battle..."],
       ["bird2", "Fine - but this better work."],
-      ["system", "bird2 is now your companion. bird2 will now follow you and help you in battle."]
+      ["system", "Albert is now your companion.\nAlbert will now follow you and help\nyou in space battles."]
     ]
     self.endDialog = [
       ["bird2", "We won! Two is tougher!"],
@@ -723,11 +744,11 @@ class StoryController:
 
       # Triangle part of speech bubble
       if speaker == 'me' or speaker == 'bird2':
-        w = window['width'] / 3
+        w = (1 if speaker == 'me' else 2) * window['width'] / 3
         h = window['height'] - 150
         target = me if speaker == 'me' else bird2
         renderer.tri_outlined(
-          w - 10, h, w + 10, h, renderer.X(target.x), renderer.Y(target.y), 'white', 'black')
+          w - 10, h, w + 10, h, renderer.X(target.x), renderer.Y(target.y + target.size * 0.75), 'white', 'black')
         renderer.line(w - 10, h, w + 10, h, 'white', 2)
 
 
@@ -1100,10 +1121,10 @@ class GameManager:
       Decoration(-9, 21, 0)
       Decoration(-18, 21, 0)
       global me
-      me = Bird(-18, -58)
-      # me = Bird(-16.0, 18.0)
+      # me = Bird(-18, -58)
+      me = Bird(-14.0, 20.0, "bird_x.png")
       global bird2
-      bird2 = Bird(-11.0, 17.0)
+      bird2 = Bird(-11.0, 19.0, "bird_y.png")
       EnemyMotherShip(-582, -24, 22)
       Turret(-554, -24)
       Turret(-563, -46)
@@ -1233,7 +1254,7 @@ def mainloop():
   for i in range(len(objs) - 1, -1, -1):
     objs[i].update(delta)
   gameManager.postupdate()
-  renderer.update(mouse, keys)
+  renderer.update(mouse, keys, me)
   if gameManager.scene_name == "level_editor":
     renderer.levelEditorControls(mouse, keys)
     le.update(delta)

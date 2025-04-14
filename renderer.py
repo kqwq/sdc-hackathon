@@ -18,7 +18,7 @@ class Renderer:
     self.camX = 0
     self.camY = 0
     self.camHt = 1
-    self.camGotoHt = 0.04
+    self.camGotoHt = 0.015
     self.hw = window['width'] / 2
     self.hh = window['height'] / 2
 
@@ -36,7 +36,7 @@ class Renderer:
     self.cullX2 = w
     self.cullY2 = h
 
-  def update(self, mouse, keys):
+  def update(self, mouse, keys, meRef):
     # Update culling area
     self.cullX1 = self.RevX(0) - 2
     self.cullY1 = self.RevY(0) - 1
@@ -52,6 +52,10 @@ class Renderer:
     if mouse['scroll'] > 0:
       self.camGotoHt *= 0.8
       mouse['scroll'] = 0  # Reset scroll to prevent continuous zooming
+    if meRef and self.camGotoHt > meRef.maxCamHt:
+      self.camGotoHt = meRef.maxCamHt
+    if self.camGotoHt < 0.005:
+      self.camGotoHt = 0.005
 
   def levelEditorControls(self, mouse, keys):
     # WASD controls for camera movement, scroll wheel for zooming
@@ -116,7 +120,7 @@ class Renderer:
 
   def img(self, img, x, y, size):
     h = size * img.size[1] / img.size[0]
-    img = img.resize((math.ceil(size), math.ceil(h)), Image.Resampling.LANCZOS)
+    img = img.resize((math.ceil(size), math.ceil(h)), Image.Resampling.NEAREST)
     self.image.paste(img, (math.ceil(x), math.ceil(y)), img)
 
   # Convert world X coordinate to screen X position
@@ -151,7 +155,7 @@ class Renderer:
     w, h = img.size
     h = h * size / w
     img = img.resize((math.ceil(self.S(size)), math.ceil(self.S(h))),
-                     Image.Resampling.LANCZOS)
+                     Image.Resampling.NEAREST)
     self.image.paste(img, (int(self.X(x)),
                      int(self.Y(y))), img)
 
@@ -161,13 +165,13 @@ class Renderer:
     w, h = img.size
     h = h * size / w
     img = img.transpose(Image.FLIP_LEFT_RIGHT).resize((math.ceil(self.S(size)), math.ceil(self.S(h))),
-                                                      Image.Resampling.LANCZOS)
+                                                      Image.Resampling.NEAREST)
     self.image.paste(img, (int(self.X(x)),
                      int(self.Y(y))), img)
 
   def world_img_rot(self, img, x, y, size, rotation):
     img = img.resize((math.ceil(self.S(size)), math.ceil(self.S(size / 2))),
-                     Image.Resampling.LANCZOS)
+                     Image.Resampling.NEAREST)
     img = img.rotate(-rotation * 180 / math.pi, expand=True)
     sr = math.sin(rotation)
     cr = math.cos(rotation)
