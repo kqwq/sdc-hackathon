@@ -61,6 +61,8 @@ DOOR_LENGTH = 0.4
 DOOR_OPEN_AMOUNT = 0.8
 DOOR_OPEN_RADIUS = 0.35
 DEBUG_MODE = False
+TEAM_ALLIANCE = 0
+TEAM_ENEMY = 1
 
 
 # Define various objects
@@ -83,7 +85,7 @@ class WorldObject:
     raise NotImplementedError("Subclasses should implement this!")
 
 class Shields(WorldObject):
-  def __init__(self, x, y, w=1, h=1, color='blue'):
+  def __init__(self, x, y, w=1, h=1, team=TEAM_ALLIANCE, color='blue'):
     super().__init__(x, y)
     objsWithHP.append(self)
     self.x = x
@@ -93,26 +95,32 @@ class Shields(WorldObject):
     self.color = color
     self.thickness = 0.2
     self.brightness = 255
-    self.hp = self.hpMax = 100
+    self.hp = self.maxHP = 100
     self.hpRegen = 8
+    self.team = team
     
-  def hit(self):
-    self.brightness = 255
+  def isInside(self, x, y):
+    inside = ((x - self.x) ** 2) / (self.w ** 2) + ((y - self.y) ** 2) / (self.h ** 2) <= 1
+    if inside:
+      self.brightness = 255
+    return inside
+  
+  def destroy(self):
+    pass
+    
     
   def update(self, delta):
     if gameManager.scene_name == 'game':
       if self.brightness > 0:
         self.brightness -= min(self.brightness, max(1, round(delta * 255 * 2)))
   
-    if self.hp < self.hpMax:
+    if self.hp < self.maxHP:
       self.hp += self.hpRegen * delta
     
   def draw(self):
     col = f'rgb(0,0,{self.brightness})'
     renderer.world_ellipse_outlined(self.x, self.y, abs(self.w), abs(self.h), col, self.thickness)
     
-    
-  
 
 class Explosion(WorldObject):
   def __init__(self, x, y):
@@ -140,9 +148,10 @@ class LaserBeam(WorldObject):
     self.x2 = x + math.cos(theta) * self.length
     self.y2 = y + math.sin(theta) * self.length
     self.size = 0.03
-    self.color = 'limegreen'
     self.lifespan = 5.0
     self.originObj = originObj
+    self.team = originObj.team if originObj else TEAM_ALLIANCE
+    self.color = 'limegreen' if self.team == TEAM_ALLIANCE else 'orange'
 
   def update(self, delta):
     self.x += self.vx * delta
@@ -156,8 +165,7 @@ class LaserBeam(WorldObject):
       
     # Collision with ships
     for obj in objsWithHP:
-      if obj != self.originObj and obj.isInside(self.x, self.y):
-        math.dist((self.x, self.y), (obj.x, obj.y)) < obj.size:
+      if obj.team != self.team and obj.isInside(self.x, self.y):
         obj.hp -= 1
         objs.remove(self)
         Explosion(self.x, self.y)
@@ -184,7 +192,6 @@ class Tile(WorldObject):
     self.type = type
     self.image = renderer.load_image(f'tile-{type}.png')
     self.attached = True
-    self.hp = 10
     self.doors = []  # (x, y, is-vertical, closed-amount)
     for doorPos in doorPositions:
       self.addDoor(doorPos)
@@ -296,8 +303,12 @@ class AllianceShip(WorldObject):
     self.maxCamHt = 1.0
     if self.name == "Basic":
       self.convertToBasicShip()
-    self.hp = 20
+    self.hp = self.maxHP = 200
     self.size = 3
+    self.team = TEAM_ALLIANCE
+  
+  def isInside(self, x, y):
+    return math.dist((self.x, self.y), (x, y)) < self.size
     
   # On delete, remove all tiles and create explosions in their place
   def destroy(self):
@@ -377,13 +388,17 @@ class SmallEnemyShip(WorldObject):
     objsWithHP.append(self)
     self.img = renderer.load_image('enemy-0.png')
     self.theta = random.random() * math.pi * 2
-    self.hp = 10
+    self.hp = self.maxHP = 10
     self.size = 8
     self.shootCooldown = self.shootReset = 2
     self.speed = 20
     self.target = None
     self.targetCooldown = self.targetReset = 5
     self.turnSpeed = 0.75
+    self.team = TEAM_ENEMY
+    
+  def isInside(self, x, y):
+    return math.dist((self.x, self.y), (x, y)) < self.size
     
   def destroy(self):
     pass
@@ -452,7 +467,7 @@ class CollisionWall(WorldObject):
 
 
 class TurretStation(WorldObject):
-  def __init__(self, x, y, targetInstance=SmallEnemyShip):
+  def __init__(self, x, y, team=TEAM_ALLIANCE):
     super().__init__(x, y)
     self.radius = 0.85
     self.color = '#4030e0'
@@ -476,7 +491,8 @@ class TurretStation(WorldObject):
     self.gotoTargetY = 0
     self.maxCamHt = 1.5
     self.target = None
-    self.targetInstance = targetInstance
+    self.team = team
+    self.targetInstance = SmallEnemyShip if team == TEAM_ALLIANCE else AllianceShip
     self.targetCooldown = self.targetReset = 3.7
 
   def update(self, delta):
@@ -536,7 +552,7 @@ class TurretStation(WorldObject):
 
 
 class Turret(WorldObject):
-  def __init__(self, x, y):
+  def __init__(self, x, y, team=TEAM_ALLIANCE):
     super().__init__(x, y)
     self.theta = 0
     self.radius = 1.45
@@ -544,6 +560,7 @@ class Turret(WorldObject):
     self.station = None
     self.img = renderer.load_image('tile-ap.png')
     self.size = 20
+    self.team = team
 
   def update(self, delta):
     if self.station:
@@ -889,7 +906,6 @@ class RectRoom(WorldObject):
 
 class StoryController:
   def __init__(self):
-    objs.append(self)
     self.storyStep = 0
     self.inDialog = True
     self.currentDialog = []
@@ -936,6 +952,9 @@ class StoryController:
     self.inDialog = True
 
   def update(self, delta):
+    if gameManager.scene_name != 'game':
+      return
+    
     if self.inDialog:
       if mouse['left']:
         mouse['left'] = False
@@ -998,6 +1017,8 @@ class StoryController:
       
 
   def draw(self):
+    if gameManager.scene_name != 'game':
+      return
     if self.inDialog:
       speaker = self.currentDialog[self.storyStep][0]
       text = self.currentDialog[self.storyStep][1]
@@ -1377,14 +1398,14 @@ class GameManager:
       CollisionWall(-1, -16, -8, -16)
       CollisionWall(-8, -16, -8, 8)
       CollisionWall(-8, 8, -25, 8)
-      Turret(-22, -27)
-      Turret(-22, 12)
-      Turret(-22, -48)
-      Turret(-22, 32)
-      TurretStation(-18, -58)
-      TurretStation(-10, -58)
-      TurretStation(11, -58)
-      TurretStation(18, -58)
+      Turret(-22, -27, TEAM_ALLIANCE)
+      Turret(-22, 12, TEAM_ALLIANCE)
+      Turret(-22, -48, TEAM_ALLIANCE)
+      Turret(-22, 32, TEAM_ALLIANCE)
+      TurretStation(-18, -58, TEAM_ALLIANCE)
+      TurretStation(-10, -58, TEAM_ALLIANCE)
+      TurretStation(11, -58, TEAM_ALLIANCE)
+      TurretStation(18, -58, TEAM_ALLIANCE)
       Decoration(-9, 21, 0)
       Decoration(-18, 21, 0)
       global me
@@ -1393,20 +1414,18 @@ class GameManager:
       global bird2
       bird2 = Bird(-11.0, 19.0, "bird_y.png")
       EnemyMotherShip(-582, -24, 22)
-      Turret(-554, -24)
-      Turret(-563, -46)
-      Turret(-563, -2)
-      TurretStation(99999, -58, AllianceShip)
-      TurretStation(99999, -58, AllianceShip)
-      TurretStation(99999, -58, AllianceShip)
+      Turret(-554, -24, TEAM_ENEMY)
+      Turret(-563, -46, TEAM_ENEMY)
+      Turret(-563, -2, TEAM_ENEMY)
+      TurretStation(99999, -58, TEAM_ENEMY)
+      TurretStation(99999, -58, TEAM_ENEMY)
+      TurretStation(99999, -58, TEAM_ENEMY)
       AllianceShip(-21.0, -17.0)
       AllianceShip(-19.0, -1.0)
       Shields(0, -12, 40, 68)
-      Shields(-582, -24, 36, 36)
+      Shields(-582, -24, 36, 36, TEAM_ENEMY)
       global bookOfAnswers
       bookOfAnswers = Decoration(14, 33, 3)
-      global storyController
-      storyController = StoryController()
 
       # me = Bird(0.1, 0.1)
 
@@ -1480,6 +1499,7 @@ class GameManager:
     renderer.label.config(cursor=mouse['cursor'])
 
 
+storyController = StoryController()
 gameManager = GameManager(root)
 
 # Init, draw, main
@@ -1536,7 +1556,7 @@ def mainloop():
     else:
       renderer.camX = me.x
       renderer.camY = me.y
-  hud.update(delta)
+  storyController.update(delta)
   
   # Remove dead objects
   for i in range(len(objsWithHP) - 1, -1, -1):
@@ -1549,7 +1569,11 @@ def mainloop():
   renderer.clearScreen()
   for obj in objs:
     obj.draw()
-  hud.draw()
+  if gameManager.scene_name == "game":
+    for obj in objsWithHP: # Draw HP for each object
+      renderer.text_center(
+        obj.x, obj.y - 10, f"{obj.hp}/{obj.maxHP} HP", "white")
+  storyController.draw()
   if gameManager.scene_name == "level_editor":
     le.draw()
 
