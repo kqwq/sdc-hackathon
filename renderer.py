@@ -1,7 +1,10 @@
+# Use the Pillow library to create a blank image, then render it onto a Tkinter canvas
+#   This is the only way I've found to use Tkinter and have a decently-performant renderer
 from PIL import Image, ImageDraw, ImageTk, ImageFont
 import tkinter as tk
 import math
 
+# Preloaded fonts
 large_font = ImageFont.truetype('cour', 17)
 very_large_font = ImageFont.truetype("cour.ttf", 50)
 dialog_font = ImageFont.truetype('cour.ttf', 25)
@@ -13,8 +16,7 @@ class Renderer:
                            "black")  # Create a blank image
     self.draw = ImageDraw.Draw(self.image)  # Drawing context
     self.tk_image = ImageTk.PhotoImage(self.image)  # Tkinter image
-    self.label = tk.Label(root, image=self.tk_image, bg='#111', border=0)
-
+    self.label = tk.Label(root, image=self.tk_image, bg='#111', border=0) # Tkinter label (acts like a <canvas> element in HTML)
     self.camX = 0
     self.camY = 0
     self.camHt = 1
@@ -146,15 +148,12 @@ class Renderer:
   def RevS(self, s):
     return s * self.camHt
 
+  # World geometry functions - automatically converts world coordinates to screen coordinates
   def world_circle(self, x, y, r, color):
     self.circle(self.X(x), self.Y(y), self.S(r), color)
     
   def world_ellipse_outlined(self, x, y, r1, r2, outline, width):
     self.draw.ellipse([self.X(x-r1), self.Y(y-r2), self.X(x+r1), self.Y(y+r2)],  outline=outline, width=math.ceil(self.S(width)))
-    
-    
-  # def world_text_center(self, x, y, text, color):
-    # self.draw.text((x, y), text, fill=color, align="center", anchor="mm")
 
   def world_img(self, img, x, y, size):
     if x < self.cullX1 or x > self.cullX2 or y < self.cullY1 or y > self.cullY2:
@@ -177,6 +176,7 @@ class Renderer:
                      int(self.Y(y))), img)
 
   def world_img_rot(self, img, x, y, size, rotation):
+    # This function took 30 minutes to derive
     img = img.resize((math.ceil(self.S(size)), math.ceil(self.S(size / 2))),
                      Image.Resampling.NEAREST)
     img = img.rotate(-rotation * 180 / math.pi, expand=True)
@@ -196,10 +196,6 @@ class Renderer:
       else:
         ox = cr * size
         oy = +cr * size/2 + sr * size
-        # oy = sr * size / 2 - 1 -           cr * size / 2
-        # - math.sin(rotation * 2) * size / 4
-    # if ox < 0:
-    #   ox = -ox
     self.image.paste(img, (math.ceil(self.X(x + ox)),
                      math.ceil(self.Y(y + oy))), img)
 
