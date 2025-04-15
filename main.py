@@ -1,9 +1,43 @@
 '''
-Main classes
+========================== INTRODUCTION ==========================
+Hello! Welcome to the monolith that is this code. Here is an overview
+of the code and what each class does.
+
+Around 85% of this code was typed by hand and 15% was generated with GitHub Copilot.
+The 2D transformations and rotations were derived by hand, I have done this in the 
+past with similar projects in both Python and JavaScript. I am fully capable of
+writing and explaining each line of code without AI/Internet, AI was used to
+speed up development in some cases, especially in parts like Turret.draw(self) and
+EnemyMotherShip.updatePoints(self).
+
+========================== CODE OVERVIEW ==========================
+Abstract classes
+- WorldObject: Parent class of all objects that exist in 2D space
+
+WorldObject classes
+- Shields: Protects mother ships from laser beams and regenerates over time
+- Explosion: A SFX element that deletes itself after 0.5 seconds
+- LaserBeam: A fast-moving beam of light that damages ships and shields
+- Tile: AllianceShip modular 2x1 part
+- AllianceShip: Modular crewed ship consisting of tiles and doors
+- SmallEnemyShip: Enemy counterpart to AllianceShip, but more simple
+- CollisionWall: Collision wall that pushes Birds away from it
+- TurretStation: Control station that birds can interact with to control Turrets
+- AllianceMotherShip: "Star Destroyer"-like ship that houses various rooms
+- EnemyMotherShip: Enemy counterpart to AllianceMotherShip but simplier and octagon-shaped
+- Bird: Shared player and NPC controller
+- Decoration: Very simple static object that can be a tree, book, etc.
+- RectRoom: Similar to Decoration, but a rectangular grayish room
+
+Controller and miscellaneous classes
+- StoryController: Keeps track of the game's plot and controls objects
+- LevelEditor: Active during the "level editor" screen, shows right sidebar
+- DebugCircle: Debugging object to test the limits of the game's renderer system
+- MenuText: Displays... menu text!
+- MenuOption: Displays the menu option, I mean what else?
+- HUD - todo merge with StoryController
 - GameManager: Manages the game state
 - Renderer: Renders shapes and images to the screen
-- MenuOption: Small menu option
-- DebugCircle: Debug circle object
 
 Global vars
 - root
