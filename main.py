@@ -531,14 +531,15 @@ class TurretStation(WorldObject):
     '''
 
   def update(self, delta):
+    # This logic applies to both players and AI
     self.shootCooldown -= delta
     
     if self.cockpit == None: # If AI-controlled
       self.targetCooldown -= delta
       if self.targetCooldown < 0:
-        if random.random() < 0.75: # 3/4 chance to target nothing
+        if random.random() < 0.75: # 3/4 chance to target nothing, this makes the game more interesting
           self.target = None
-          self.targetCooldown = self.targetReset * random.random()
+          self.targetCooldown = self.targetReset * random.random() # Wait a random time to de-sync turrets
         else:
           self.targetCooldown = self.targetReset
           candidates = list(filter(lambda obj: isinstance(obj, self.targetInstance), objsWithHP))
@@ -548,16 +549,15 @@ class TurretStation(WorldObject):
             self.target = None
             
       if self.target and self.controls:
+        # Point in the direction of the target always (if target exists)
         self.theta2 = math.atan2(self.target.y - self.controls.y, self.target.x - self.controls.x)
         if self.shootCooldown < 0:
           self.shootCooldown = self.shootCooldownMax
           LaserBeam(self.controls.x, self.controls.y, self.theta2, self)
     
-      
-      
-  
   def player_control(self, delta):
-    
+    # Intentionally awkward mouse controls to prevent turrets from being OP
+    # It's a feature not a bug (really)
     distFromTurret = max(0, window['width']*3/4 - mouse['x'] ) / window['width'] * 850
     self.theta = math.pi-(mouse['y'] / window['height'] - 0.5) * 2.5
     self.gotoTargetX = self.controls.x + distFromTurret * math.cos(self.theta)
@@ -566,16 +566,13 @@ class TurretStation(WorldObject):
     self.targetY += (self.gotoTargetY - self.targetY) * 0.2
     self.theta2 = math.atan2(renderer.RevY(mouse['y']) - self.controls.y, renderer.RevX(mouse['x']) - self.controls.x)
 
-    
+    # Left click to shoot if able to, also you can't target your own ship by firing backwards
     if mouse['left']:
       if self.shootCooldown < 0 and self.controls.x > renderer.RevX(mouse['x']):
         self.shootCooldown = self.shootCooldownMax
-        
         LaserBeam(self.controls.x, self.controls.y, self.theta2, self)        
-        
-
-    
-    # Jump out
+      
+    # Exit the TurretStation with enter
     elif keys.get('Return', False):
       global me
       keys['Return'] = False
@@ -583,6 +580,7 @@ class TurretStation(WorldObject):
       me.y += self.size / 2
 
   def draw(self):
+    # Draw the turret station as crude pixel art drawing as usual
     renderer.world_img(self.image, self.x - self.size/2, self.y - self.size/2, self.size)
 
 
@@ -593,23 +591,23 @@ class Turret(WorldObject):
     self.radius = 1.45
     self.color = '#777777'
     self.station = None
-    self.img = renderer.load_image('tile-ap.png')
     self.size = 20
     self.team = team
 
   def update(self, delta):
+    # Set the theta to be the controlling station's target angle (stored as theta2)
     if self.station:
       self.theta = self.station.theta2
-    
 
   def draw(self):
+    # Circle base
     renderer.world_circle(self.x, self.y, self.radius, self.color)
-    
+
+    # Caching
     sx = math.cos(self.theta)
     sy = math.sin(self.theta)
     
-    
-    # # Turret barrel
+    # Turret barrel
     barrel_length = 1.7
     barrel_width = 0.1
     barrel_x = self.x + sx * barrel_length
@@ -617,7 +615,7 @@ class Turret(WorldObject):
     renderer.world_line(self.x, self.y, barrel_x,
                         barrel_y, '#445', barrel_width)
     
-    # Turret base (elongated at back side)
+    # Turret base (rectangle)
     base_length = 0.5
     base_width = 0.7
     barrel_x = self.x + sx * base_length
@@ -626,19 +624,12 @@ class Turret(WorldObject):
     barrel_y2 = self.y - sy * base_length
     renderer.world_line(barrel_x2, barrel_y2, barrel_x, barrel_y, '#333', base_width)
     
-    
-    # renderer.world_polygon([
-    #   (self.x - sx * base_length, self.y - sy * base_length),
-    #   (self.x + sx * base_length, self.y + sy * base_length),
-    #   (self.x + sx * base_length - sx * base_width, self.y + sy * base_length - sy * base_width),
-    #   (self.x - sx * base_length - sx * base_width, self.y - sy * base_length - sy * base_width),
-    # ], 'black')
-    
+    # Legacy code for when it was pixel art (doesn't rotate well)
     # renderer.world_img_rot(self.img, self.x-.5, self.y-.5, 2, self.theta)
 
 
-
 class AllianceMotherShip(WorldObject):
+  # Hexagon-shaped alliance ship loosely based on the Star Destroyer from Star Wars
   def __init__(self, x, y, s=1, sx=1):
     super().__init__(x, y)
     self.name = 'MotherShip'
@@ -653,9 +644,10 @@ class AllianceMotherShip(WorldObject):
       (-sx, -s),
     ]
     self.color = 'gray'
-    self.spawnShipCooldown = self.spawnShipReset = 1 # respawn instantly
+    self.spawnShipCooldown = self.spawnShipReset = 1 # Respawn ships every second if needed - very fast
 
   def updatePoints(self):
+    # This function is used in the level editor to recalculate points
     s = self.size
     sx = self.size2
     self.points = [
@@ -698,11 +690,12 @@ class EnemyMotherShip(WorldObject):
       (-s * 1.1, -s * 1.1),
     ]
     self.color = 'gray'
-    self.spawnShipCooldown = self.spawnShipReset = 30
+    self.spawnShipCooldown = self.spawnShipReset = 12
     self.start = False
-    
+    # Similar to AllianceMotherShip in functionality
 
-  def updatePoints(self):
+  def updatePoints(self):    
+    # This function is used in the level editor to recalculate points
     s = self.size
     self.points = [
       (0, -s * 1.5),
@@ -718,6 +711,7 @@ class EnemyMotherShip(WorldObject):
   def update(self, delta):
     if gameManager.scene_name == 'game':  
       if len(objsWithHP) < 10:
+        # On game start, spawn 8 ships all at once
         if self.start:
           for i in range(8):
             SmallEnemyShip(self.x, self.y)
@@ -725,7 +719,7 @@ class EnemyMotherShip(WorldObject):
         self.spawnShipCooldown -= delta
         if self.spawnShipCooldown < 0:
           self.spawnShipCooldown = self.spawnShipReset
-          # Spawn a small enemy ship
+          # Spawn a small enemy ship every 12 seconds
           SmallEnemyShip(self.x, self.y)
 
   def draw(self):
