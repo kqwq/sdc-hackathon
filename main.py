@@ -28,7 +28,6 @@ Controller and miscellaneous classes
 - DebugCircle: Debugging object to test the limits of the game's renderer system
 - MenuText: Displays... menu text!
 - MenuOption: Displays the menu option, I mean what else?
-- HUD - todo merge with StoryController
 - GameManager: Manages the game state
 - Renderer: Renders shapes and images to the screen
 '''
@@ -78,6 +77,7 @@ class Shields(WorldObject):
     self.y = y
     self.w = w
     self.h = h
+    self.size = self.h # for displaying HP
     self.color = color
     self.thickness = 0.2
     self.brightness = 255
@@ -140,8 +140,8 @@ class LaserBeam(WorldObject):
     self.vx = math.cos(theta) * self.speed
     self.vy = math.sin(theta) * self.speed
     self.length = 2
-    self.x2 = x + math.cos(theta) * self.length
-    self.y2 = y + math.sin(theta) * self.length
+    self.x2 = x - math.cos(theta) * self.length
+    self.y2 = y - math.sin(theta) * self.length
     self.size = 0.03
     self.lifespan = 5.0
     self.originObj = originObj
@@ -150,7 +150,7 @@ class LaserBeam(WorldObject):
     self.color = 'limegreen' if self.team == TEAM_ALLIANCE else 'orange'
 
   def update(self, delta):
-    # Advance the tail (x, y) and head (x2, y2) of the beam
+    # Advance the head (x, y) and tail (x2, y2) of the beam
     self.x += self.vx * delta
     self.y += self.vy * delta
     self.x2 += self.vx * delta
@@ -178,6 +178,8 @@ class LaserBeam(WorldObject):
 
 class Tile(WorldObject):
   def __init__(self, parent, x, y, type="ap", doorPositions=[]):
+    x -= 2.5
+    y -= 0.5
     super().__init__(x, y)
     '''
     There are 4 types of tiles as listed here:
@@ -188,6 +190,7 @@ class Tile(WorldObject):
     '''
     self.type = type
     self.parent = parent # AllianceShip parent
+
     self.ax = parent.x + x  # accumulated x position (ship's x + self offset x)
     self.ay = parent.y + y  # accumulated y position (ship's y + self offset y)
     self.image = renderer.load_image(f'tile-{type}.png')
@@ -250,8 +253,9 @@ class Tile(WorldObject):
 
   def draw(self):
     # Draw engines if player is using them
-    if self.type == 'engine' and self.parent.usingEngines:
-      ex, ey = self.transform(2.5, 0.5)
+    if self.type == 'engine':
+      sp = self.parent
+      ex, ey = self.transform(2 + 0.8 * sp.speed / sp.maxSpeed, 0.5)
       lx, ly = self.transform(2, 0.1)
       rx, ry = self.transform(2, 0.9)
       renderer.world_polygon(
@@ -286,7 +290,6 @@ class Tile(WorldObject):
 
 class AllianceShip(WorldObject):
   def __init__(self, x, y, name="Basic"):
-    super().__init__(x, y)
     objsWithHP.append(self)
     self.name = name
     self.tiles = []
@@ -297,25 +300,27 @@ class AllianceShip(WorldObject):
     # Short for "sine theta" and "cosine theta", used for caching
     self.stheta = 0
     self.ctheta = 1
-    self.rotSpeed = 1
+    self.rotSpeed = 1.5
     # Ship-relative position of the chair that the player bird sits on when 
     #  controlling the ship
     self.chairX = 0.25
     self.chairY = 0.5
     self.speed = 0
-    self.maxSpeed = 20
+    self.maxSpeed = 30
     # Acceleration - how fast the ship can change its velocity over time
     self.acc = 5
-    self.usingEngines = False
     self.cockpit = None # An object that controls the ship (only Bird for now)
     self.shootCooldown = 0
     self.shootCooldownMax = 0.1 # Ship can shoot 2 bullets every 0.1 seconds
     self.maxCamHt = 1.0 # Max height the ship can zoom out
+    self.x = x
+    self.y = y
     if self.name == "Basic":
       self.convertToBasicShip()
     self.hp = self.maxHP = 200
     self.size = 3 # Used for circle collisions (polygon collisions were too difficult)
     self.team = TEAM_ALLIANCE
+    super().__init__(x, y) # Add to objs at the end for drawing order reasons
   
   def isInside(self, x, y):
     # Simple circle collision (for now)
@@ -353,12 +358,10 @@ class AllianceShip(WorldObject):
     # W -> go forward
     if keys.get('w', False):
       self.speed += (self.maxSpeed - self.speed) * acc
-      self.usingEngines = True
 
     # S -> brake
     elif keys.get('s', False):
       self.speed += (0 - self.speed) * acc
-      self.usingEngines = False
 
     # A/D -> steering
     if keys.get('a', False):
@@ -375,8 +378,11 @@ class AllianceShip(WorldObject):
 
     # On mouse press, find all weapon tiles and 
     #  fire a LaserBeam where each weapon tile is located
-    self.shootCooldown -= delta
-    if self.shootCooldown < 0 and mouse['left']:
+    if mouse['left']:
+      self.shoot()
+  
+  def shoot(self):
+    if self.shootCooldown < 0: 
       self.shootCooldown = self.shootCooldownMax
       for tile in self.tiles:
         if tile.type == 'weapon-l' or tile.type == 'weapon-r':
@@ -386,6 +392,9 @@ class AllianceShip(WorldObject):
             LaserBeam(x, y, theta, self)
 
   def update(self, delta):
+    # Laser cooldown
+    self.shootCooldown -= delta
+    
     # Caching/optimization
     self.stheta = math.sin(self.theta)
     self.ctheta = math.cos(self.theta)
@@ -403,9 +412,11 @@ class AllianceShip(WorldObject):
 
   def draw(self):
     # I don't think this does anything... TODO FIX TODO FIX -> make it show debug collision bounds
-    for i, tile in enumerate(self.tiles):
-      if tile == 1:
-        renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
+    # for i, tile in enumerate(self.tiles):
+      # if tile == 1:
+        # renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
+    # renderer.world_circle(self.x, self.y, self.size, '#00FF00') # debug circle
+    pass
 
 
 class SmallEnemyShip(WorldObject):
@@ -558,7 +569,7 @@ class TurretStation(WorldObject):
   def player_control(self, delta):
     # Intentionally awkward mouse controls to prevent turrets from being OP
     # It's a feature not a bug (really)
-    distFromTurret = max(0, window['width']*3/4 - mouse['x'] ) / window['width'] * 850
+    distFromTurret = max(0, window['width']*3/4 - mouse['x'] ) / window['width'] * 350
     self.theta = math.pi-(mouse['y'] / window['height'] - 0.5) * 2.5
     self.gotoTargetX = self.controls.x + distFromTurret * math.cos(self.theta)
     self.gotoTargetY = self.controls.y + distFromTurret * math.sin(self.theta)
@@ -566,9 +577,9 @@ class TurretStation(WorldObject):
     self.targetY += (self.gotoTargetY - self.targetY) * 0.2
     self.theta2 = math.atan2(renderer.RevY(mouse['y']) - self.controls.y, renderer.RevX(mouse['x']) - self.controls.x)
 
-    # Left click to shoot if able to, also you can't target your own ship by firing backwards
+    # Left click to shoot if able to
     if mouse['left']:
-      if self.shootCooldown < 0 and self.controls.x > renderer.RevX(mouse['x']):
+      if self.shootCooldown < 0:
         self.shootCooldown = self.shootCooldownMax
         LaserBeam(self.controls.x, self.controls.y, self.theta2, self)        
       
@@ -677,6 +688,7 @@ class AllianceMotherShip(WorldObject):
 class EnemyMotherShip(WorldObject):
   def __init__(self, x, y, s=1):
     super().__init__(x, y)
+    objsWithHP.append(self)
     self.name = 'EnemyMotherShip'
     self.size = s
     self.points = [
@@ -692,7 +704,18 @@ class EnemyMotherShip(WorldObject):
     self.color = 'gray'
     self.spawnShipCooldown = self.spawnShipReset = 12
     self.start = False
+    self.hp = self.maxHP = 1000
+    self.team = TEAM_ENEMY
     # Similar to AllianceMotherShip in functionality
+  
+  def destroy(self):
+    # Create 50 explosion objects around the ship
+    for i in range(50):
+      Explosion(self.x + (random.random()-.5) * self.size * 2, self.y + (random.random()-.5) * self.size * 2)
+
+  
+  def isInside(self, x, y):
+    return math.dist((self.x, self.y), (x, y)) < self.size
 
   def updatePoints(self):    
     # This function is used in the level editor to recalculate points
@@ -734,7 +757,7 @@ class Bird(WorldObject):
     self.color = (255, 255, 0)  # Yellow color
     self.size = 0.65
     self.img = renderer.load_image(img)
-    self.speed = 4
+    self.speed = 5
     self.flipped = flipped
     self.nearestShip = None
     self.insideTileX = 0
@@ -941,7 +964,7 @@ class StoryController:
     self.startDialog = [
       ["bird2", "Welcome to Birds in Space!"],
       ["me", "Where am I?"],
-      ["bird2", "You are on our home ship.\nWe are in the middle of an expansive\nspace battle.\nWe need your help to win."],
+      ["bird2", "You are on our home ship.\nWe are in the middle of an epic\nspace battle.\nWe need your help to win."],
       ["me", "My help?"],
       ["bird2", "Yes. You were unfrozen from\ncryostasis."],
       ["me", "Huh?"],
@@ -952,51 +975,70 @@ class StoryController:
     ]
     self.bookDialog = [
       ["system", "You can't win this battle alone."],
-      ["system", "Tip: You can talk to other birds\nby pressing <Space> when nearby."],
+      ["system", "Tip: You can talk to other birds\nby standing nearby and pressing\n<Space>."],
     ]
     self.askForHelpDialog = [
       ["me", "Please help me out."],
       ["bird2", "Why?"],
       ["me", "Because two is tougher than one."],
       ["bird2", "???"],
-      ["me", "I know, it's corny but it's our ONLY\nchance at winning this battle..."],
+      ["me", "Working together is our ONLY\nchance at winning this battle..."],
       ["bird2", "Fine - but this better work."],
       ["system", "Albert is now your companion.\nAlbert will now follow you and help\nyou in space battles."]
     ]
     self.hangarInfoDialog = [
       ["bird2", "This is the hangar.\nEnter a ship using the <Enter> key."],
+      ["bird2", "I will weaken the enemy's shields\nbut we must work together."],
+      ["bird2", "What are you waiting for? Let's go!"],
     ]
     self.endDialog = [
       ["bird2", "We won! Two is tougher!"],
       ["system", "You have won the battle."]
     ]
+    self.hintText = ""
     self.setCurrentDialog(self.startDialog)
     self.stage = "EXPLORE"
     self.interactedWithBook = False
+    self.octagonRef = None
 
   def setCurrentDialog(self, dialogObj, hintText="Click to advance story"):
-    hud.setHintText(hintText)
+    self.setHintText(hintText)
     self.currentDialog = dialogObj
     self.storyStep = 0
     self.inDialog = True
+    
+  def setHintText(self, text):
+    self.hintText = text
+    
+  def makeObjectsIndestructible(self):
+    # Make shields indestructible
+    for obj in objsWithHP:
+      if isinstance(obj, Shields):
+        obj.hp = obj.maxHP
+      elif isinstance(obj, EnemyMotherShip):
+        obj.hp = obj.maxHP
 
   def update(self, delta):
     if gameManager.scene_name != 'game':
       return
+    # print(self.stage, math.dist((me.x, me.y), (bookOfAnswers.x, bookOfAnswers.y)) , self.interactedWithBook, self.hintText)
     
     if self.inDialog:
-      if mouse['left']:
+      if mouse['left'] or keys.get('space', False):
         mouse['left'] = False
+        keys['space'] = False
         self.storyStep += 1
         if self.storyStep > len(self.currentDialog) - 1:
           self.inDialog = False
-          hud.setHintText("")
+          self.setHintText("")
           
-    if self.stage == 'EXPLORE':
+    elif self.stage == 'EXPLORE':
+      if not self.octagonRef:
+        self.octagonRef = list(filter(lambda obj: isinstance(obj, EnemyMotherShip), objsWithHP))[0]
       # Collision/interaction with the book
       if math.dist((me.x, me.y), (bookOfAnswers.x, bookOfAnswers.y)) < 2:
         if not self.interactedWithBook:
-          hud.setHintText("Press <Space> to interact")
+          self.setHintText("Press <Space> to interact with book")
         if keys.get('space', False):
           self.interactedWithBook = True
           keys['space'] = False
@@ -1006,7 +1048,7 @@ class StoryController:
       # Interaction with bird2
       elif math.dist((me.x, me.y), (bird2.x, bird2.y)) < 2:
         if self.interactedWithBook:
-          hud.setHintText("Press <Space> to ask for help")
+          self.setHintText("Press <Space> to ask Albert for help")
         if keys.get('space', False):
           self.interactedWithBook = True
           keys['space'] = False
@@ -1016,7 +1058,7 @@ class StoryController:
           self.stage = 'PRE-BATTLE-1'
           
       else:
-        hud.setHintText("")
+        self.setHintText("")
     
     elif self.stage == 'PRE-BATTLE-1':
       if me.x >= -13 and me.y >= -20 and me.x <= -8 and me.y <= -13:
@@ -1026,22 +1068,46 @@ class StoryController:
         me.follower = None
     
     elif self.stage == 'PRE-BATTLE-2':
-      s2 = objsWithHP[0]
-      bird2.x += (s2.x - bird2.x) * 0.1
-      bird2.y += (s2.y - bird2.y) * 0.1
-      if math.dist((bird2.x, bird2.y), (s2.x, s2.y)) < 0.001:
+      bird2.x += (ship2.x - bird2.x) * 0.1
+      bird2.y += (ship2.y - bird2.y) * 0.1
+      if math.dist((bird2.x, bird2.y), (ship2.x, ship2.y)) < 0.001:
         self.stage = 'BATTLE'
+        ship2.shootCooldown = 7
+        
       me.x = me.lastX # freeze player
       me.y = me.lastY
       
         
     elif self.stage == 'BATTLE':
-      s2 = objsWithHP[0]
-      bird2.x = s2.x + 0.5
-      bird2.y = s2.y + 0.5
-      s2.speed = s2.maxSpeed * 0.5
+      bird2.x = ship2.x + 0.5
+      bird2.y = ship2.y + 0.5
+      ship2.speed = ship2.maxSpeed * 0.5
       
-      pass
+      # Steer towards octagon
+      if self.octagonRef:
+        o = self.octagonRef
+        theta = math.atan2(ship2.y - o.y, ship2.x - o.x)
+        angleDiff = theta - ship2.theta
+        if angleDiff > math.pi:
+          ship2.theta -= math.pi * 2
+        elif angleDiff < -math.pi:
+          ship2.theta += math.pi * 2
+        if abs(angleDiff) > ship2.rotSpeed * delta:
+          if angleDiff > 0:
+            ship2.theta += ship2.rotSpeed * delta
+          else:
+            ship2.theta -= ship2.rotSpeed * delta
+        
+        if o.hp <= 0:
+          self.setCurrentDialog(
+            self.endDialog, "Click to advance story")
+          self.stage = 'POST-BATTLE'
+      
+      # Contiuously shoot
+      ship2.shoot()
+    
+    if self.stage != 'BATTLE' and self.stage != 'POST-BATTLE':
+      self.makeObjectsIndestructible()
       
       
 
@@ -1066,6 +1132,10 @@ class StoryController:
         renderer.tri_outlined(
           w - 10, h, w + 10, h, renderer.X(target.x), renderer.Y(target.y + target.size * 0.75), 'white', 'black')
         renderer.line(w - 10, h, w + 10, h, 'white', 2)
+        
+    # Draw hint text below
+    renderer.text_center_large(window['width'] / 2,
+                               window['height'] - 15, self.hintText, "white")
 
 
 class LevelEditor:
@@ -1240,6 +1310,7 @@ window = {
 me = None
 bird2 = None
 bookOfAnswers = None
+ship2 = None
 
 # Define renderer
 renderer = renderer.Renderer(root, window)
@@ -1330,24 +1401,6 @@ class MenuOption:
     self.y = window['height'] / 2 + self.relativeY
 
 
-# Define HUD elements
-class HUD:
-  def __init__(self):
-    self.hintText = ""  # text that appears at the bottom e.g. "Press <Enter> to control ship"
-
-  def setHintText(self, hintText):
-    self.hintText = hintText
-
-  def update(self, delta):
-    pass
-
-  def draw(self):
-    # Draw the hint text at the bottom of the screen
-    renderer.text_center_large(window['width'] / 2,
-                               window['height'] - 15, self.hintText, "white")
-
-
-hud = HUD()
 
 # Define game manager
 
@@ -1391,8 +1444,8 @@ class GameManager:
     elif scene == "game":
 
       # Game init
-      for i in range(100):
-        DebugCircle()
+      # for i in range(100):
+      #   DebugCircle()
 
       AllianceMotherShip(0, -12, 50, 25)
       RectRoom(-23, -60, 22, -51)
@@ -1442,25 +1495,26 @@ class GameManager:
       me = Bird(-14.0, 20.0, "bird_x.png", True)
       global bird2
       bird2 = Bird(-11.0, 19.0, "bird_y.png")
-      EnemyMotherShip(-582, -24, 22)
-      Turret(-554, -24, TEAM_ENEMY)
-      Turret(-563, -46, TEAM_ENEMY)
-      Turret(-563, -2, TEAM_ENEMY)
+      EnemyMotherShip(-282, -24, 22)
+      Turret(-263, -46, TEAM_ENEMY)
+      Turret(-254, -24, TEAM_ENEMY)
+      Turret(-263, -2, TEAM_ENEMY)
       TurretStation(99999, -58, TEAM_ENEMY)
       TurretStation(99999, -58, TEAM_ENEMY)
       TurretStation(99999, -58, TEAM_ENEMY)
-      AllianceShip(-21.0, -17.0)
+      global ship2
+      ship2 = AllianceShip(-21.0, -17.0) # The ship that Albert (bird2) jumps in
       AllianceShip(-19.0, -1.0)
       Shields(0, -12, 40, 68)
-      Shields(-582, -24, 36, 36, TEAM_ENEMY)
+      Shields(-282, -24, 38, 38, TEAM_ENEMY)
       global bookOfAnswers
       bookOfAnswers = Decoration(14, 33, 3)
 
       # me = Bird(0.1, 0.1)
 
     elif scene == "level_editor":
-      for i in range(5):
-        DebugCircle()
+      # for i in range(5):
+      #   DebugCircle()
       AllianceMotherShip(0, -12, 50, 25)
       RectRoom(-23, -60, 22, -51)
       RectRoom(-1, -51, 2, 27)
@@ -1601,7 +1655,7 @@ def mainloop():
   if gameManager.scene_name == "game":
     for obj in objsWithHP: # Draw HP for each object
       renderer.text_center(
-        obj.x, obj.y - 10, f"{obj.hp}/{obj.maxHP} HP", "white")
+        renderer.X(obj.x), renderer.Y(obj.y - obj.size), f"{round(obj.hp)}/{obj.maxHP} HP", "white")
   storyController.draw()
   if gameManager.scene_name == "level_editor":
     le.draw()
@@ -1625,7 +1679,7 @@ def mainloop():
   renderer.refreshTkinterImage()
 
   # Draw next frame in 33 ms
-  root.after(20, mainloop)
+  root.after(16, mainloop)
 
 
 if __name__ == '__main__':

@@ -1,4 +1,0 @@
-# sdc-hackathon
-
-
-
