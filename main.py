@@ -1,13 +1,16 @@
 '''
-========================== INTRODUCTION ==========================
-Hello! Welcome to the monolith that is this code. Here is an overview
-of the code and what each class does.
+================================ INTRODUCTION =================================
+Hello! Welcome to the monolith that is this code. This project was inspired
+by the space battles in the _original_ Star Wars Battlefront II. Hope you enjoy
+the game!
 
-========================== CODE OVERVIEW ==========================
-Abstract classes
+Below is an overview of the code and what each class does.
+
+================================ CODE OVERVIEW ================================
+Abstract Classes
 - WorldObject: Parent class of all objects that exist in 2D space
 
-WorldObject classes
+WorldObject Classes
 - Shields: Protects mother ships from laser beams and regenerates over time
 - Explosion: A SFX element that deletes itself after 0.5 seconds
 - LaserBeam: A fast-moving beam of light that damages ships and shields
@@ -22,7 +25,7 @@ WorldObject classes
 - Decoration: Very simple static object that can be a tree, book, etc.
 - RectRoom: Similar to Decoration, but a rectangular grayish room
 
-Controller and miscellaneous classes
+Controller and Miscellaneous Classes
 - StoryController: Keeps track of the game's plot and controls objects
 - LevelEditor: Active during the "level editor" screen, shows right sidebar
 - DebugCircle: Debugging object to test the limits of the game's renderer system
@@ -82,7 +85,7 @@ class Shields(WorldObject):
     self.thickness = 0.2
     self.brightness = 255
     self.hp = self.maxHP = 100
-    self.hpRegen = 8
+    self.hpRegen = 7
     self.team = team
     
   def isInside(self, x, y):
@@ -311,7 +314,7 @@ class AllianceShip(WorldObject):
     self.acc = 5
     self.cockpit = None # An object that controls the ship (only Bird for now)
     self.shootCooldown = 0
-    self.shootCooldownMax = 0.1 # Ship can shoot 2 bullets every 0.1 seconds
+    self.shootCooldownMax = 0.25 # Ship can shoot 2 bullets every 0.25 seconds
     self.maxCamHt = 1.0 # Max height the ship can zoom out
     self.x = x
     self.y = y
@@ -426,7 +429,7 @@ class SmallEnemyShip(WorldObject):
     self.img = renderer.load_image('enemy-0.png')
     self.theta = random.random() * math.pi * 2
     self.hp = self.maxHP = 10
-    self.size = 8
+    self.size = 6
     self.shootCooldown = self.shootReset = 2
     self.speed = 20
     self.target = None
@@ -481,7 +484,7 @@ class SmallEnemyShip(WorldObject):
     self.y += math.sin(self.theta) * self.speed * delta
     
   def draw(self):
-    renderer.world_circle(self.x, self.y, self.size, '#FF0000') # debug circle
+    # renderer.world_circle(self.x, self.y, self.size, '#FF0000') # debug circle
     # Draw the image
     renderer.world_img_rot(self.img, self.x, self.y, self.size, self.theta)
 
@@ -677,7 +680,7 @@ class AllianceMotherShip(WorldObject):
       if self.spawnShipCooldown < 0:
         self.spawnShipCooldown = self.spawnShipReset
         if len(list(filter(lambda obj: isinstance(obj, AllianceShip), objsWithHP))) < 2:
-          AllianceShip(self.x - 16, self.y + 7 + random.random() * 20)
+          AllianceShip(self.x - 16, self.y + random.random() * 20)
 
   def draw(self):
     renderer.world_polygon(
@@ -702,9 +705,9 @@ class EnemyMotherShip(WorldObject):
       (-s * 1.1, -s * 1.1),
     ]
     self.color = 'gray'
-    self.spawnShipCooldown = self.spawnShipReset = 12
+    self.spawnShipCooldown = self.spawnShipReset = 5
     self.start = False
-    self.hp = self.maxHP = 1000
+    self.hp = self.maxHP = 800
     self.team = TEAM_ENEMY
     # Similar to AllianceMotherShip in functionality
   
@@ -742,7 +745,7 @@ class EnemyMotherShip(WorldObject):
         self.spawnShipCooldown -= delta
         if self.spawnShipCooldown < 0:
           self.spawnShipCooldown = self.spawnShipReset
-          # Spawn a small enemy ship every 12 seconds
+          # Spawn a small enemy ship every `self.spawnShipReset` seconds
           SmallEnemyShip(self.x, self.y)
 
   def draw(self):
@@ -789,7 +792,7 @@ class Bird(WorldObject):
     if keys.get('d', False):
       vx += self.speed * delta
       self.flipped = True
-    if keys.get('Shift_L', False):
+    if DEBUG_MODE and keys.get('Shift_L', False):
       self.speed = 50 # for debuggin
       
     if abs(vx) and abs(vy):
@@ -817,8 +820,8 @@ class Bird(WorldObject):
       currentDistance = math.sqrt(dx**2 + dy**2)
       targetDistance = self.followerDistance
       direction = 1 if currentDistance > targetDistance else 0
-      self.follower.x += math.cos(angle) * self.speed * 0.8 * direction * delta
-      self.follower.y += math.sin(angle) * self.speed * 0.8 * direction * delta
+      self.follower.x += math.cos(angle) * self.speed * 0.85 * direction * delta
+      self.follower.y += math.sin(angle) * self.speed * 0.85 * direction * delta
       self.follower.flipped = dx > 0
       
 
@@ -972,6 +975,7 @@ class StoryController:
       ["me", "Not really..."],
       ["bird2", "Well then, we are all going to die."],
       ["system", "Use the <WASD> keys to move.\nExplore your surroundings.\nDefeat the octagon-shaped enemy\nspaceship."],
+      ["system", "You can also zoom in and out using\nthe mouse wheel."],
     ]
     self.bookDialog = [
       ["system", "You can't win this battle alone."],
@@ -993,7 +997,8 @@ class StoryController:
     ]
     self.endDialog = [
       ["bird2", "We won! Two is tougher!"],
-      ["system", "You have won the battle."]
+      ["system", "You have won the battle."],
+      ["system", "Thanks for playing!"]
     ]
     self.hintText = ""
     self.setCurrentDialog(self.startDialog)
@@ -1070,7 +1075,7 @@ class StoryController:
     elif self.stage == 'PRE-BATTLE-2':
       bird2.x += (ship2.x - bird2.x) * 0.1
       bird2.y += (ship2.y - bird2.y) * 0.1
-      if math.dist((bird2.x, bird2.y), (ship2.x, ship2.y)) < 0.001:
+      if math.dist((bird2.x, bird2.y), (ship2.x, ship2.y)) < 0.002:
         self.stage = 'BATTLE'
         ship2.shootCooldown = 7
         
@@ -1105,6 +1110,9 @@ class StoryController:
       
       # Contiuously shoot
       ship2.shoot()
+      
+      # Show controls as a hint
+      self.setHintText("A/D to steer, W/S to control thrust, Click to shoot")
     
     if self.stage != 'BATTLE' and self.stage != 'POST-BATTLE':
       self.makeObjectsIndestructible()
@@ -1411,6 +1419,7 @@ class GameManager:
     self.root = root
     self.resize_job = None
     self.scene_name = None
+    self.showDebugInfo = False
 
   # Thanks to GitHub Copilot
   def on_possible_resize(self, event):
@@ -1510,7 +1519,6 @@ class GameManager:
       global bookOfAnswers
       bookOfAnswers = Decoration(14, 33, 3)
 
-      # me = Bird(0.1, 0.1)
 
     elif scene == "level_editor":
       # for i in range(5):
@@ -1523,47 +1531,6 @@ class GameManager:
       RectRoom(-8, 12, -1, 14)
       RectRoom(-25, -23, -8, 8)
       RectRoom(-8, -18, -1, -16)
-      CollisionWall(-25, -23, -8, -23)
-      CollisionWall(-8, -23, -8, -18)
-      CollisionWall(-8, -18, -1, -18)
-      CollisionWall(-1, -18, -1, -51)
-      CollisionWall(-1, -51, -23, -51)
-      CollisionWall(-23, -51, -23, -60)
-      CollisionWall(-23, -60, 22, -60)
-      CollisionWall(22, -60, 22, -51)
-      CollisionWall(22, -51, 2, -51)
-      CollisionWall(2, -51, 2, 27)
-      CollisionWall(2, 27, 16, 27)
-      CollisionWall(16, 27, 16, 36)
-      CollisionWall(16, 36, -16, 36)
-      CollisionWall(-16, 36, -16, 27)
-      CollisionWall(-16, 27, -1, 27)
-      CollisionWall(-1, 27, -1, 14)
-      CollisionWall(-1, 14, -8, 14)
-      CollisionWall(-8, 14, -8, 22)
-      CollisionWall(-8, 22, -19, 22)
-      CollisionWall(-19, 22, -19, 12)
-      CollisionWall(-19, 12, -1, 12)
-      CollisionWall(-1, 12, -1, -16)
-      CollisionWall(-1, -16, -8, -16)
-      CollisionWall(-8, -16, -8, 8)
-      CollisionWall(-8, 8, -25, 8)
-      TurretStation(-18, -58)
-      TurretStation(-10, -58)
-      TurretStation(11, -58)
-      TurretStation(18, -58)
-      Turret(-22, -27)
-      Turret(-22, 12)
-      Turret(-22, -48)
-      Turret(-22, 32)
-      Decoration(-9, 21, 0)
-      Decoration(-18, 21, 0)
-      EnemyMotherShip(-582, -24, 22)
-      Turret(-554, -24)
-      Turret(-563, -46)
-      Turret(-563, -2)
-      AllianceShip(-21.0, -17.0)
-      AllianceShip(-19.0, -1.0)
 
     elif scene == "credits":
       MenuOption("Back to Menu", w / 2, h / 2 + 120,
@@ -1661,24 +1628,30 @@ def mainloop():
     le.draw()
 
   # Print debug (FPS)
-  if delta > 0:
-    renderer.text(10, 10, f"FPS: {1 / delta:.2f}", "white")
-  renderer.text(
-    10, 30, f"Mouse: {mouse['x']}, {mouse['y']} {mouse['scroll']}", "white")
-  keysList = []
-  for key in keys:
-    if keys[key]:
-      keysList.append(key)
-  renderer.text(10, 50, f"Keys: {keysList}", "white")
-  renderer.text(10, 70, f"Scene: {gameManager.scene_name}", "white")
-  renderer.text(10, 90, f"Objects: {len(objs)}", "white")
-  renderer.text(
-    10, 110, f"Camera: {round(renderer.camX)}, {round(renderer.camY)}, {round(renderer.camHt, 2)}", "white")
+  if gameManager.showDebugInfo:
+    if delta > 0:
+      renderer.text(10, 10, f"FPS: {round(1 / delta)}", "white")
+    renderer.text(
+      10, 30, f"Mouse: {mouse['x']}, {mouse['y']} {mouse['scroll']}", "white")
+    keysList = []
+    for key in keys:
+      if keys[key]:
+        keysList.append(key)
+    renderer.text(10, 50, f"Keys: {keysList}", "white")
+    renderer.text(10, 70, f"Scene: {gameManager.scene_name}", "white")
+    renderer.text(10, 90, f"Objects: {len(objs)}", "white")
+    renderer.text(
+      10, 110, f"Camera: {round(renderer.camX)}, {round(renderer.camY)}, {round(renderer.camHt, 2)}", "white")
+  else:
+    renderer.text(10, 10, "Press X to show debug info", "white")
+  if keys.get('x', False):
+    keys['x'] = False
+    gameManager.showDebugInfo = not gameManager.showDebugInfo
 
   # Update the Tkinter image
   renderer.refreshTkinterImage()
 
-  # Draw next frame in 33 ms
+  # Draw next frame in 16 ms (around 60 FPS ideally, realistically 30 FPS)
   root.after(16, mainloop)
 
 
