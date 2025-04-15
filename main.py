@@ -3,13 +3,6 @@
 Hello! Welcome to the monolith that is this code. Here is an overview
 of the code and what each class does.
 
-Around 85% of this code was typed by hand and 15% was generated with GitHub Copilot.
-The 2D transformations and rotations were derived by hand, I have done this in the 
-past with similar projects in both Python and JavaScript. I am fully capable of
-writing and explaining each line of code without AI/Internet, AI was used to
-speed up development in some cases, especially in parts like Turret.draw(self) and
-EnemyMotherShip.updatePoints(self).
-
 ========================== CODE OVERVIEW ==========================
 Abstract classes
 - WorldObject: Parent class of all objects that exist in 2D space
@@ -38,36 +31,28 @@ Controller and miscellaneous classes
 - HUD - todo merge with StoryController
 - GameManager: Manages the game state
 - Renderer: Renders shapes and images to the screen
-
-Global vars
-- root
-- gameManager
-- renderer
-- objs
-
-
 '''
 
-
+# Imports
 import tkinter as tk
 import random
 import time
-import renderer
 import math
+import renderer # This is imported by renderer.py (local file)
 
 # Constants
+DEBUG_MODE = False # Shows additional information on the screen
 DOOR_THICKNESS = 0.04
 DOOR_LENGTH = 0.4
 DOOR_OPEN_AMOUNT = 0.8
 DOOR_OPEN_RADIUS = 0.35
-DEBUG_MODE = False
-TEAM_ALLIANCE = 0
+TEAM_ALLIANCE = 0 # Python doesn't support enums, so this is how it's done
 TEAM_ENEMY = 1
 
-
-# Define various objects
-objs = []
-objsWithHP = []
+# Global variables
+objs = [] # List of updatable and drawable objects 
+objsWithHP = [] # List of objects with the following methods: 
+                #   inInside(x, y), destroy(), update(delta), and draw()
 walls = []
 storyController = None
 
@@ -83,6 +68,7 @@ class WorldObject:
 
   def draw(self):
     raise NotImplementedError("Subclasses should implement this!")
+
 
 class Shields(WorldObject):
   def __init__(self, x, y, w=1, h=1, team=TEAM_ALLIANCE, color='blue'):
@@ -100,24 +86,29 @@ class Shields(WorldObject):
     self.team = team
     
   def isInside(self, x, y):
+    # Ellipse collision formula
     inside = ((x - self.x) ** 2) / (self.w ** 2) + ((y - self.y) ** 2) / (self.h ** 2) <= 1
     if inside:
-      self.brightness = 255
+      self.brightness = 255 # Creates a flare effect. 
+      #   See Reddit (the ultimate reliable source) for more details: 
+      #   https://www.reddit.com/r/MawInstallation/comments/s83m85
     return inside
   
   def destroy(self):
     pass
     
-    
   def update(self, delta):
+    # If 'game' scene and the shield is flaring up, decrease the brightness of the flare
     if gameManager.scene_name == 'game':
       if self.brightness > 0:
         self.brightness -= min(self.brightness, max(1, round(delta * 255 * 2)))
-  
+
+    # If HP is less than the max HP, regenerate HP at a constant rate
     if self.hp < self.maxHP:
       self.hp += self.hpRegen * delta
     
   def draw(self):
+    # Draw the shield as an ellipse surrounding whatever it is protecting, pretty cool
     col = f'rgb(0,0,{self.brightness})'
     renderer.world_ellipse_outlined(self.x, self.y, abs(self.w), abs(self.h), col, self.thickness)
     
@@ -130,18 +121,22 @@ class Explosion(WorldObject):
     self.lifespan = 0.5
 
   def update(self, delta):
+    # Decrease the size of the explosion over time
     self.size += delta * 2
     self.lifespan -= delta
     if self.lifespan < 0:
       objs.remove(self)
 
   def draw(self):
+    # Render the explosion as an orange circle - nothing complicated
     renderer.world_circle(self.x, self.y, self.size, self.color)
+
 
 class LaserBeam(WorldObject):
   def __init__(self, x, y, theta, originObj=None):
     super().__init__(x, y)
     self.speed = 120
+    # vx = velocity in the X direction
     self.vx = math.cos(theta) * self.speed
     self.vy = math.sin(theta) * self.speed
     self.length = 2
@@ -150,29 +145,33 @@ class LaserBeam(WorldObject):
     self.size = 0.03
     self.lifespan = 5.0
     self.originObj = originObj
+    # Derive team and color from the object that originally created the LaserBeam
     self.team = originObj.team if originObj else TEAM_ALLIANCE
     self.color = 'limegreen' if self.team == TEAM_ALLIANCE else 'orange'
 
   def update(self, delta):
+    # Advance the tail (x, y) and head (x2, y2) of the beam
     self.x += self.vx * delta
     self.y += self.vy * delta
     self.x2 += self.vx * delta
     self.y2 += self.vy * delta
+
+    # Despawn over time
     self.lifespan -= delta
     if self.lifespan < 0:
       objs.remove(self)
       return
       
-    # Collision with ships
+    # Collision with ships and sheilds, but only if from a different team
     for obj in objsWithHP:
       if obj.team != self.team and obj.isInside(self.x, self.y):
-        obj.hp -= 1
-        objs.remove(self)
-        Explosion(self.x, self.y)
+        obj.hp -= 1 # beam does 1 HP of damage
+        objs.remove(self) # remove self (laser beam, not the object)
+        Explosion(self.x, self.y) # Create an Explosion in its place
         return
 
   def draw(self):
-
+    # Draw the beam as a thin line
     renderer.world_line(self.x, self.y, self.x2,
                         self.y2, self.color, self.size)
 
@@ -181,27 +180,28 @@ class Tile(WorldObject):
   def __init__(self, parent, x, y, type="ap", doorPositions=[]):
     super().__init__(x, y)
     '''
-    ap - all purpose
-    engine - engine unit
-    weapon - weapon unit
-    control - control unit
+    There are 4 types of tiles as listed here:
+      ap "all purpose" - empty storage unit
+      engine - propels ship
+      weapon - shoots lasers
+      control - control unit that controls throttle of engines
     '''
-    self.parent = parent
-    self.ax = parent.x + x  # accumulated x position
-    self.ay = parent.y + y  # accumulated y position
     self.type = type
+    self.parent = parent # AllianceShip parent
+    self.ax = parent.x + x  # accumulated x position (ship's x + self offset x)
+    self.ay = parent.y + y  # accumulated y position (ship's y + self offset y)
     self.image = renderer.load_image(f'tile-{type}.png')
-    self.attached = True
-    self.doors = []  # (x, y, is-vertical, closed-amount)
-    for doorPos in doorPositions:
+    self.attached = True # If attached to parent ship or free-floating in space
+    self.doors = []  # Set of (x1, y1, x2, y2, x3, y3, is-vertical, closed-amount) tuples
+    '''
+      doorPositions list consists of 0=top-left, 1=top-right, 2=right, 3=bottom-right, 4=bottom-left, 5=left
+    '''
+    for doorPos in doorPositions: # Spawn doors at positions as specified above
       self.addDoor(doorPos)
     self.nearPlayer = False
 
-  '''
-  position is one of 0=top-left, 1=top-right, 2=right, 3=bottom-right, 4=bottom-left, 5=left
-  '''
-
   def addDoor(self, position):
+    # Add a door to this tile
     doorPosTable = [
       [0.5, DOOR_THICKNESS, 0.5 - DOOR_LENGTH, DOOR_THICKNESS,
        0.5 + DOOR_LENGTH, DOOR_THICKNESS, False, 1],  # top-left
@@ -219,12 +219,14 @@ class Tile(WorldObject):
     self.doors.append(doorPosTable[position])
 
   def update(self, delta):
+    # Update accumulated x and y for display and collision purposes
     self.ax = self.parent.x + self.x * \
       self.parent.ctheta - self.y * self.parent.stheta
     self.ay = self.parent.y + self.y * \
         self.parent.ctheta + self.x * self.parent.stheta
     tx, ty = self.transform(0, 0)
 
+    # If player is a bird and near this tile, open the door nearest to that player
     if isinstance(me, Bird) and me.nearestShip == self.parent:
       if abs(me.insideTileX - self.x - 1) < 1.5 and abs(me.insideTileY - self.y - 0.5) < 1:
         self.nearPlayer = True
@@ -237,6 +239,7 @@ class Tile(WorldObject):
       else:
         self.nearPlayer = False
 
+  # Rotate a set of (x, y) offset coordinates around the parent ship's center point
   def transform(self, x, y):
     return (
       self.parent.x + (self.x + x) * self.parent.ctheta -
@@ -246,7 +249,7 @@ class Tile(WorldObject):
     )
 
   def draw(self):
-
+    # Draw engines if player is using them
     if self.type == 'engine' and self.parent.usingEngines:
       ex, ey = self.transform(2.5, 0.5)
       lx, ly = self.transform(2, 0.1)
@@ -254,9 +257,12 @@ class Tile(WorldObject):
       renderer.world_polygon(
         [(ex, ey), (lx, ly), (rx, ry)], 'red')
 
+    # Draw the actual tile
     # renderer.world_rect(self.x - 0.1, self.y - 0.1, 2 + 0.2, 1 + 0.2, 'green')
     # renderer.world_img(self.image, self.ax, self.ay, 2)
     renderer.world_img_rot(self.image, self.ax, self.ay, 2, self.parent.theta)
+
+    # Draw each door on this tile
     col = '#98F5F9'
     if DEBUG_MODE:
       col = 'red' if self.nearPlayer else 'blue'
@@ -284,30 +290,35 @@ class AllianceShip(WorldObject):
     objsWithHP.append(self)
     self.name = name
     self.tiles = []
-    self.fuel = 10000
+    self.fuel = 10000 # Sadly not used. In a future version this will be a factor.
     self.vx = 0
     self.vy = 0
     self.theta = 0
+    # Short for "sine theta" and "cosine theta", used for caching
     self.stheta = 0
     self.ctheta = 1
     self.rotSpeed = 1
+    # Ship-relative position of the chair that the player bird sits on when 
+    #  controlling the ship
     self.chairX = 0.25
     self.chairY = 0.5
     self.speed = 0
     self.maxSpeed = 20
+    # Acceleration - how fast the ship can change its velocity over time
     self.acc = 5
     self.usingEngines = False
-    self.cockpit = None
+    self.cockpit = None # An object that controls the ship (only Bird for now)
     self.shootCooldown = 0
-    self.shootCooldownMax = 0.1
-    self.maxCamHt = 1.0
+    self.shootCooldownMax = 0.1 # Ship can shoot 2 bullets every 0.1 seconds
+    self.maxCamHt = 1.0 # Max height the ship can zoom out
     if self.name == "Basic":
       self.convertToBasicShip()
     self.hp = self.maxHP = 200
-    self.size = 3
+    self.size = 3 # Used for circle collisions (polygon collisions were too difficult)
     self.team = TEAM_ALLIANCE
   
   def isInside(self, x, y):
+    # Simple circle collision (for now)
     return math.dist((self.x, self.y), (x, y)) < self.size
     
   # On delete, remove all tiles and create explosions in their place
@@ -318,10 +329,11 @@ class AllianceShip(WorldObject):
     self.tiles = []
 
   def convertToBasicShip(self):
+    # A "prebuilt" ship with all the basic Tiles and doors needed
     for tile in self.tiles:
       objs.remove(tile)
     self.tiles = [
-      Tile(self, 2, -2, 'weapon-r', [4]),
+      Tile(self, 2, -2, 'weapon-r', [4]), # Yes, there are left and right variants of this tile
       Tile(self, 1, -1, 'ap', [1, 3, 4]),
       Tile(self, 3, -1, 'engine'),
       Tile(self, 0, 0, 'control', [1, 3]),
@@ -332,51 +344,65 @@ class AllianceShip(WorldObject):
     ]
 
   def player_control(self, delta):
+    # This line is to prevent the ship from traveling too far if the FPS drops below 10
     delta = min(delta, 0.1)
+
+    # This is to prevent the acceleration from become >1 (that would make the ship faster than the max speed)
     acc = min(0.5, delta * self.acc)
+
+    # W -> go forward
     if keys.get('w', False):
       self.speed += (self.maxSpeed - self.speed) * acc
       self.usingEngines = True
+
+    # S -> brake
     elif keys.get('s', False):
       self.speed += (0 - self.speed) * acc
       self.usingEngines = False
 
+    # A/D -> steering
     if keys.get('a', False):
       self.theta -= delta * self.rotSpeed
     if keys.get('d', False):
       self.theta += delta * self.rotSpeed
 
+    # Enter key -> exit ship (birds can survive in space I guess...)
     if keys.get('Return', False):
       global me
       keys['Return'] = False
       me = self.cockpit
       self.cockpit = None
 
-    # On mouse press, find all weapon tiles and fire them
+    # On mouse press, find all weapon tiles and 
+    #  fire a LaserBeam where each weapon tile is located
     self.shootCooldown -= delta
     if self.shootCooldown < 0 and mouse['left']:
       self.shootCooldown = self.shootCooldownMax
       for tile in self.tiles:
         if tile.type == 'weapon-l' or tile.type == 'weapon-r':
-          # Find the nearest ship and fire the weapon
           if isinstance(tile, Tile) and tile.parent:
             x, y = tile.transform(1, 0.5)
             theta = self.theta + math.pi
             LaserBeam(x, y, theta, self)
 
   def update(self, delta):
+    # Caching/optimization
     self.stheta = math.sin(self.theta)
     self.ctheta = math.cos(self.theta)
+
+    # Set velocity based on speed+theta, set position based on velocity
     self.vx = -math.cos(self.theta) * self.speed
     self.vy = -math.sin(self.theta) * self.speed
     self.x += self.vx * delta
     self.y += self.vy * delta
 
+    # If driven by a bird, set the bird's position on the chair
     if self.cockpit:
       self.cockpit.x = self.x + self.chairX * self.ctheta - self.chairY * self.stheta
       self.cockpit.y = self.y + self.chairY * self.ctheta + self.chairX * self.stheta
 
   def draw(self):
+    # I don't think this does anything... TODO FIX TODO FIX -> make it show debug collision bounds
     for i, tile in enumerate(self.tiles):
       if tile == 1:
         renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
@@ -396,14 +422,20 @@ class SmallEnemyShip(WorldObject):
     self.targetCooldown = self.targetReset = 5
     self.turnSpeed = 0.75
     self.team = TEAM_ENEMY
+    '''
+    Explanation: Every `self.targetReset` seconds, the ship locks onto a new target.
+                 If the ship has a target, shoot every `self.targetReset` seconds.
+    '''
     
   def isInside(self, x, y):
+    # Circle collision (it works well enough since the enemy ship is small)
     return math.dist((self.x, self.y), (x, y)) < self.size
     
   def destroy(self):
     pass
 
   def update(self, delta):
+    # Every 2 seconds, shoot directly ahead
     self.shootCooldown -= delta
     if self.shootCooldown < 0:
       self.shootCooldown = self.shootReset
@@ -411,7 +443,6 @@ class SmallEnemyShip(WorldObject):
       dy = math.sin(self.theta) * 0.5
       LaserBeam(self.x + dx, self.y + dy, self.theta, self)
       LaserBeam(self.x - dx, self.y - dy, self.theta, self)
-    
     
     # Every 5 seconds, find a new target
     self.targetCooldown -= delta
@@ -433,19 +464,15 @@ class SmallEnemyShip(WorldObject):
           self.theta += self.turnSpeed * delta
         else:
           self.theta -= self.turnSpeed * delta
-          
-        
       
     # Movement
     self.x += math.cos(self.theta) * self.speed * delta
     self.y += math.sin(self.theta) * self.speed * delta
     
-          
-
   def draw(self):
     renderer.world_circle(self.x, self.y, self.size, '#FF0000') # debug circle
+    # Draw the image
     renderer.world_img_rot(self.img, self.x, self.y, self.size, self.theta)
-    pass
 
 
 class CollisionWall(WorldObject):
@@ -454,6 +481,7 @@ class CollisionWall(WorldObject):
     walls.append(self)
     self.x2 = x2
     self.y2 = y2
+    # This is an optimization for the collision code found in Bird.update()
     if self.x2 < self.x:
       self.x, self.x2 = self.x2, self.x
     if self.y2 < self.y:
@@ -463,6 +491,7 @@ class CollisionWall(WorldObject):
     pass
 
   def draw(self):
+    # Draw a blue wall. Credit to Google's color picker for the color lol
     renderer.world_line(self.x, self.y, self.x2, self.y2, '#060270', 0.1)
 
 
@@ -472,6 +501,7 @@ class TurretStation(WorldObject):
     self.radius = 0.85
     self.color = '#4030e0'
     self.controls = None
+    # Search for an existing Turret to claim ownership of
     for obj in objs:
       if isinstance(obj, Turret) and obj.station == None:
         self.controls = obj
@@ -480,20 +510,25 @@ class TurretStation(WorldObject):
     self.image = renderer.load_image('turret-station.png')
     self.cockpit = None
     self.size = 1
-    
     self.shootCooldown = 0
     self.shootCooldownMax = 0.1
-    self.targetX = 0
-    self.targetY = 0
+    self.targetX = 0 # AI-only
+    self.targetY = 0 # AI-only
     self.theta = 0
     self.theta2 = 0
-    self.gotoTargetX = 0
-    self.gotoTargetY = 0
-    self.maxCamHt = 1.5
-    self.target = None
+    self.gotoTargetX = 0 # AI-only
+    self.gotoTargetY = 0 # AI-only
+    self.maxCamHt = 1.5 # Player-only
+    self.target = None # AI-only
     self.team = team
     self.targetInstance = SmallEnemyShip if team == TEAM_ALLIANCE else AllianceShip
     self.targetCooldown = self.targetReset = 3.7
+    '''
+    This object is a little confusing. Here's how it works.
+    
+    Player-controlled turret logic is in TurretStation.player_control()
+    AI-controlled turrets logic is in TurretStation.update()
+    '''
 
   def update(self, delta):
     self.shootCooldown -= delta
