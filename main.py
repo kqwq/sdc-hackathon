@@ -48,9 +48,56 @@ class WorldObject:
   def draw(self):
     raise NotImplementedError("Subclasses should implement this!")
 
+class Shields(WorldObject):
+  def __init__(self, x, y, w=1, h=1, color='blue'):
+    super().__init__(x, y)
+    objsWithHP.append(self)
+    self.x = x
+    self.y = y
+    self.w = w
+    self.h = h
+    self.color = color
+    self.thickness = 0.2
+    self.brightness = 255
+    self.hp = self.hpMax = 100
+    self.hpRegen = 8
+    
+  def hit(self):
+    self.brightness = 255
+    
+  def update(self, delta):
+    if gameManager.scene_name == 'game':
+      if self.brightness > 0:
+        self.brightness -= min(self.brightness, max(1, round(delta * 255 * 2)))
+  
+    if self.hp < self.hpMax:
+      self.hp += self.hpRegen * delta
+    
+  def draw(self):
+    col = f'rgb(0,0,{self.brightness})'
+    renderer.world_ellipse_outlined(self.x, self.y, abs(self.w), abs(self.h), col, self.thickness)
+    
+    
+  
+
+class Explosion(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    self.size = 0.1
+    self.color = 'orange'
+    self.lifespan = 0.5
+
+  def update(self, delta):
+    self.size += delta * 2
+    self.lifespan -= delta
+    if self.lifespan < 0:
+      objs.remove(self)
+
+  def draw(self):
+    renderer.world_circle(self.x, self.y, self.size, self.color)
 
 class LaserBeam(WorldObject):
-  def __init__(self, x, y, theta):
+  def __init__(self, x, y, theta, originObj=None):
     super().__init__(x, y)
     self.speed = 120
     self.vx = math.cos(theta) * self.speed
@@ -61,6 +108,7 @@ class LaserBeam(WorldObject):
     self.size = 0.03
     self.color = 'limegreen'
     self.lifespan = 5.0
+    self.originObj = originObj
 
   def update(self, delta):
     self.x += self.vx * delta
@@ -70,6 +118,16 @@ class LaserBeam(WorldObject):
     self.lifespan -= delta
     if self.lifespan < 0:
       objs.remove(self)
+      return
+      
+    # Collision with ships
+    for obj in objsWithHP:
+      if obj != self.originObj and obj.isInside(self.x, self.y):
+        math.dist((self.x, self.y), (obj.x, obj.y)) < obj.size:
+        obj.hp -= 1
+        objs.remove(self)
+        Explosion(self.x, self.y)
+        return
 
   def draw(self):
 
@@ -179,7 +237,7 @@ class Tile(WorldObject):
       renderer.world_circle(self.ax, self.ay, 0.1, col)
 
 
-class Ship(WorldObject):
+class AllianceShip(WorldObject):
   def __init__(self, x, y, name="Basic"):
     super().__init__(x, y)
     objsWithHP.append(self)
@@ -201,8 +259,18 @@ class Ship(WorldObject):
     self.cockpit = None
     self.shootCooldown = 0
     self.shootCooldownMax = 0.1
+    self.maxCamHt = 1.0
     if self.name == "Basic":
       self.convertToBasicShip()
+    self.hp = 20
+    self.size = 3
+    
+  # On delete, remove all tiles and create explosions in their place
+  def destroy(self):
+    for tile in self.tiles:
+      Explosion(tile.ax, tile.ay)
+      objs.remove(tile)
+    self.tiles = []
 
   def convertToBasicShip(self):
     for tile in self.tiles:
@@ -237,13 +305,11 @@ class Ship(WorldObject):
       global me
       keys['Return'] = False
       me = self.cockpit
-      renderer.camGotoHt = max(0.05, renderer.camHt / 2)
       self.cockpit = None
 
     # On mouse press, find all weapon tiles and fire them
     self.shootCooldown -= delta
     if self.shootCooldown < 0 and mouse['left']:
-      print("Firing weapon")
       self.shootCooldown = self.shootCooldownMax
       for tile in self.tiles:
         if tile.type == 'weapon-l' or tile.type == 'weapon-r':
@@ -251,8 +317,7 @@ class Ship(WorldObject):
           if isinstance(tile, Tile) and tile.parent:
             x, y = tile.transform(1, 0.5)
             theta = self.theta + math.pi
-            print(f"Firing weapon at {x}, {y} with angle {theta}")
-            LaserBeam(x, y, theta)
+            LaserBeam(x, y, theta, self)
 
   def update(self, delta):
     self.stheta = math.sin(self.theta)
@@ -270,6 +335,68 @@ class Ship(WorldObject):
     for i, tile in enumerate(self.tiles):
       if tile == 1:
         renderer.world_circle(self.x + i * 10, self.y, 5, (0, 0, 255))
+
+
+class SmallEnemyShip(WorldObject):
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    objsWithHP.append(self)
+    self.img = renderer.load_image('enemy-0.png')
+    self.theta = random.random() * math.pi * 2
+    self.hp = 10
+    self.size = 8
+    self.shootCooldown = self.shootReset = 2
+    self.speed = 20
+    self.target = None
+    self.targetCooldown = self.targetReset = 5
+    self.turnSpeed = 0.75
+    
+  def destroy(self):
+    pass
+
+  def update(self, delta):
+    self.shootCooldown -= delta
+    if self.shootCooldown < 0:
+      self.shootCooldown = self.shootReset
+      dx = math.cos(self.theta) * 0.5
+      dy = math.sin(self.theta) * 0.5
+      LaserBeam(self.x + dx, self.y + dy, self.theta, self)
+      LaserBeam(self.x - dx, self.y - dy, self.theta, self)
+    
+    
+    # Every 5 seconds, find a new target
+    self.targetCooldown -= delta
+    if self.targetCooldown < 0:
+      self.targetCooldown = self.targetReset
+      candidates = list(filter(lambda obj: isinstance(obj, AllianceShip), objsWithHP))
+      self.target = None if len(candidates) == 0 else random.choice(candidates)
+      
+    # Head towards the target
+    if self.target:
+      angleWithTarget = math.atan2(self.target.y - self.y, self.target.x - self.x)
+      angleDiff = angleWithTarget - self.theta
+      if angleDiff > math.pi:
+        self.theta -= math.pi * 2
+      elif angleDiff < -math.pi:
+        self.theta += math.pi * 2
+      if abs(angleDiff) > self.turnSpeed * delta:
+        if angleDiff > 0:
+          self.theta += self.turnSpeed * delta
+        else:
+          self.theta -= self.turnSpeed * delta
+          
+        
+      
+    # Movement
+    self.x += math.cos(self.theta) * self.speed * delta
+    self.y += math.sin(self.theta) * self.speed * delta
+    
+          
+
+  def draw(self):
+    renderer.world_circle(self.x, self.y, self.size, '#FF0000') # debug circle
+    renderer.world_img_rot(self.img, self.x, self.y, self.size, self.theta)
+    pass
 
 
 class CollisionWall(WorldObject):
@@ -291,7 +418,7 @@ class CollisionWall(WorldObject):
 
 
 class TurretStation(WorldObject):
-  def __init__(self, x, y):
+  def __init__(self, x, y, targetInstance=SmallEnemyShip):
     super().__init__(x, y)
     self.radius = 0.85
     self.color = '#4030e0'
@@ -313,13 +440,38 @@ class TurretStation(WorldObject):
     self.theta2 = 0
     self.gotoTargetX = 0
     self.gotoTargetY = 0
-    self.maxCamHt = 0.15
+    self.maxCamHt = 1.5
+    self.target = None
+    self.targetInstance = targetInstance
+    self.targetCooldown = self.targetReset = 3.7
 
   def update(self, delta):
-    pass
+    self.shootCooldown -= delta
+    
+    if self.cockpit == None: # If AI-controlled
+      self.targetCooldown -= delta
+      if self.targetCooldown < 0:
+        if random.random() < 0.75: # 3/4 chance to target nothing
+          self.target = None
+          self.targetCooldown = self.targetReset * random.random()
+        else:
+          self.targetCooldown = self.targetReset
+          candidates = list(filter(lambda obj: isinstance(obj, self.targetInstance), objsWithHP))
+          if len(candidates) > 0:
+            self.target = random.choice(list(candidates))
+          else:
+            self.target = None
+            
+      if self.target and self.controls:
+        self.theta2 = math.atan2(self.target.y - self.controls.y, self.target.x - self.controls.x)
+        if self.shootCooldown < 0:
+          self.shootCooldown = self.shootCooldownMax
+          LaserBeam(self.controls.x, self.controls.y, self.theta2, self)
+    
+      
+      
   
   def player_control(self, delta):
-    self.shootCooldown += delta
     
     distFromTurret = max(0, window['width']*3/4 - mouse['x'] ) / window['width'] * 850
     self.theta = math.pi-(mouse['y'] / window['height'] - 0.5) * 2.5
@@ -331,10 +483,10 @@ class TurretStation(WorldObject):
 
     
     if mouse['left']:
-      if self.shootCooldown > self.shootCooldownMax and self.controls.x > renderer.RevX(mouse['x']):
-        self.shootCooldown = 0
+      if self.shootCooldown < 0 and self.controls.x > renderer.RevX(mouse['x']):
+        self.shootCooldown = self.shootCooldownMax
         
-        LaserBeam(self.controls.x, self.controls.y, self.theta2)        
+        LaserBeam(self.controls.x, self.controls.y, self.theta2, self)        
         
 
     
@@ -356,33 +508,48 @@ class Turret(WorldObject):
     self.radius = 1.45
     self.color = '#777777'
     self.station = None
+    self.img = renderer.load_image('tile-ap.png')
+    self.size = 20
 
   def update(self, delta):
     if self.station:
       self.theta = self.station.theta2
-    pass
+    
 
   def draw(self):
     renderer.world_circle(self.x, self.y, self.radius, self.color)
-    # Turret barrel
-    barrel_length = 0.5
+    
+    sx = math.cos(self.theta)
+    sy = math.sin(self.theta)
+    
+    
+    # # Turret barrel
+    barrel_length = 1.7
     barrel_width = 0.1
-    barrel_x = self.x + math.cos(self.theta) * barrel_length
-    barrel_y = self.y + math.sin(self.theta) * barrel_length
+    barrel_x = self.x + sx * barrel_length
+    barrel_y = self.y + sy * barrel_length
     renderer.world_line(self.x, self.y, barrel_x,
-                        barrel_y, 'red', barrel_width)
+                        barrel_y, '#445', barrel_width)
+    
+    # Turret base (elongated at back side)
+    base_length = 0.5
+    base_width = 0.7
+    barrel_x = self.x + sx * base_length
+    barrel_y = self.y + sy * base_length
+    barrel_x2 = self.x - sx * base_length
+    barrel_y2 = self.y - sy * base_length
+    renderer.world_line(barrel_x2, barrel_y2, barrel_x, barrel_y, '#333', base_width)
+    
+    
+    # renderer.world_polygon([
+    #   (self.x - sx * base_length, self.y - sy * base_length),
+    #   (self.x + sx * base_length, self.y + sy * base_length),
+    #   (self.x + sx * base_length - sx * base_width, self.y + sy * base_length - sy * base_width),
+    #   (self.x - sx * base_length - sx * base_width, self.y - sy * base_length - sy * base_width),
+    # ], 'black')
+    
+    # renderer.world_img_rot(self.img, self.x-.5, self.y-.5, 2, self.theta)
 
-
-class SmallEnemyShip(WorldObject):
-  def __init__(self, x, y):
-    super().__init__(x, y)
-
-  def update(self, delta):
-    pass
-
-  def draw(self):
-    renderer.world_circle(self.x, self.y, 0.5, 'red')
-    pass
 
 
 class AllianceMotherShip(WorldObject):
@@ -400,6 +567,7 @@ class AllianceMotherShip(WorldObject):
       (-sx, -s),
     ]
     self.color = 'gray'
+    self.spawnShipCooldown = self.spawnShipReset = 1 # respawn instantly
 
   def updatePoints(self):
     s = self.size
@@ -414,7 +582,13 @@ class AllianceMotherShip(WorldObject):
     ]
 
   def update(self, delta):
-    pass
+    # Every second, check if there are less than 2 alliance ships and spawn one if so 
+    if gameManager.scene_name == 'game':  
+      self.spawnShipCooldown -= delta
+      if self.spawnShipCooldown < 0:
+        self.spawnShipCooldown = self.spawnShipReset
+        if len(list(filter(lambda obj: isinstance(obj, AllianceShip), objsWithHP))) < 2:
+          AllianceShip(self.x - 16, self.y + 7 + random.random() * 20)
 
   def draw(self):
     renderer.world_polygon(
@@ -438,6 +612,9 @@ class EnemyMotherShip(WorldObject):
       (-s * 1.1, -s * 1.1),
     ]
     self.color = 'gray'
+    self.spawnShipCooldown = self.spawnShipReset = 30
+    self.start = False
+    
 
   def updatePoints(self):
     s = self.size
@@ -453,7 +630,17 @@ class EnemyMotherShip(WorldObject):
     ]
 
   def update(self, delta):
-    pass
+    if gameManager.scene_name == 'game':  
+      if len(objsWithHP) < 10:
+        if self.start:
+          for i in range(8):
+            SmallEnemyShip(self.x, self.y)
+          self.start = False
+        self.spawnShipCooldown -= delta
+        if self.spawnShipCooldown < 0:
+          self.spawnShipCooldown = self.spawnShipReset
+          # Spawn a small enemy ship
+          SmallEnemyShip(self.x, self.y)
 
   def draw(self):
     renderer.world_polygon(
@@ -462,23 +649,22 @@ class EnemyMotherShip(WorldObject):
 
 
 class Bird(WorldObject):
-  def __init__(self, x, y, img="bird.png"):
+  def __init__(self, x, y, img="bird.png", flipped=False):
     super().__init__(x, y)
     self.color = (255, 255, 0)  # Yellow color
     self.size = 0.65
     self.img = renderer.load_image(img)
     self.speed = 4
-    self.flipped = False
+    self.flipped = flipped
     self.nearestShip = None
     self.insideTileX = 0
     self.insideTileY = 0
     self.isNearDoor = False
     self.lastX = x
     self.lastY = y
-    self.interactedWithBook = False
     self.maxCamHt = 0.04
     self.follower = None # Bird object that follows this bird
-    self.followerDistance = 0.5
+    self.followerDistance = 1
 
   def revertPosition(self):
     # Revert the position of the bird to the last position
@@ -519,31 +705,19 @@ class Bird(WorldObject):
       self.x = me.x
       self.y = me.y
       self.nearestShip.cockpit = self
-
-    if self.follower == None:
-      # Collision/interaction with the book
-      if math.dist((self.x, self.y), (bookOfAnswers.x, bookOfAnswers.y)) < 2:
-        if not self.interactedWithBook:
-          hud.setHintText("Press <Space> to interact")
-        if keys.get('space', False):
-          self.interactedWithBook = True
-          keys['space'] = False
-          storyController.setCurrentDialog(
-            storyController.bookDialog, "Click to turn to the next page")
-          
-      # Interaction with bird2
-      elif math.dist((self.x, self.y), (bird2.x, bird2.y)) < 2:
-        if self.interactedWithBook:
-          hud.setHintText("Press <Space> to ask for help")
-        if keys.get('space', False):
-          self.interactedWithBook = True
-          keys['space'] = False
-          storyController.setCurrentDialog(
-            storyController.askForHelpDialog, "Click to advance story")
-          self.follower = bird2
-          
-      else:
-        hud.setHintText("")
+        
+    if self.follower: # If bird has follower, move the follower towards the bird, keeping the angle but targetting a certain distance
+      # Calculate the angle between the two birds
+      dx = self.x - self.follower.x
+      dy = self.y - self.follower.y
+      angle = math.atan2(dy, dx)
+      currentDistance = math.sqrt(dx**2 + dy**2)
+      targetDistance = self.followerDistance
+      direction = 1 if currentDistance > targetDistance else 0
+      self.follower.x += math.cos(angle) * self.speed * 0.8 * direction * delta
+      self.follower.y += math.sin(angle) * self.speed * 0.8 * direction * delta
+      self.follower.flipped = dx > 0
+      
 
   def update(self, delta):
     # if self.insideTile and self.insideTile.parent and not self.insideTile.parent.cockpit:
@@ -554,7 +728,7 @@ class Bird(WorldObject):
     self.nearestShip = None
     minDist = 1000
     for obj in objs:
-      if isinstance(obj, Ship) or isinstance(obj, TurretStation):
+      if isinstance(obj, AllianceShip) or isinstance(obj, TurretStation):
         dist = math.dist((self.x, self.y), (obj.x, obj.y))
         if dist < minDist and dist < 3:
           minDist = dist
@@ -710,11 +884,16 @@ class StoryController:
       ["bird2", "Fine - but this better work."],
       ["system", "Albert is now your companion.\nAlbert will now follow you and help\nyou in space battles."]
     ]
+    self.hangarInfoDialog = [
+      ["bird2", "This is the hangar.\nEnter a ship using the <Enter> key."],
+    ]
     self.endDialog = [
       ["bird2", "We won! Two is tougher!"],
       ["system", "You have won the battle."]
     ]
     self.setCurrentDialog(self.startDialog)
+    self.stage = "EXPLORE"
+    self.interactedWithBook = False
 
   def setCurrentDialog(self, dialogObj, hintText="Click to advance story"):
     hud.setHintText(hintText)
@@ -730,6 +909,59 @@ class StoryController:
         if self.storyStep > len(self.currentDialog) - 1:
           self.inDialog = False
           hud.setHintText("")
+          
+    if self.stage == 'EXPLORE':
+      # Collision/interaction with the book
+      if math.dist((me.x, me.y), (bookOfAnswers.x, bookOfAnswers.y)) < 2:
+        if not self.interactedWithBook:
+          hud.setHintText("Press <Space> to interact")
+        if keys.get('space', False):
+          self.interactedWithBook = True
+          keys['space'] = False
+          self.setCurrentDialog(
+            self.bookDialog, "Click to turn to the next page")
+          
+      # Interaction with bird2
+      elif math.dist((me.x, me.y), (bird2.x, bird2.y)) < 2:
+        if self.interactedWithBook:
+          hud.setHintText("Press <Space> to ask for help")
+        if keys.get('space', False):
+          self.interactedWithBook = True
+          keys['space'] = False
+          self.setCurrentDialog(
+            self.askForHelpDialog, "Click to advance story")
+          me.follower = bird2
+          self.stage = 'PRE-BATTLE-1'
+          
+      else:
+        hud.setHintText("")
+    
+    elif self.stage == 'PRE-BATTLE-1':
+      if me.x >= -13 and me.y >= -20 and me.x <= -8 and me.y <= -13:
+        self.stage = 'PRE-BATTLE-2'
+        self.setCurrentDialog(
+          self.hangarInfoDialog, "Click to advance story")
+        me.follower = None
+    
+    elif self.stage == 'PRE-BATTLE-2':
+      s2 = objsWithHP[0]
+      bird2.x += (s2.x - bird2.x) * 0.1
+      bird2.y += (s2.y - bird2.y) * 0.1
+      if math.dist((bird2.x, bird2.y), (s2.x, s2.y)) < 0.001:
+        self.stage = 'BATTLE'
+      me.x = me.lastX # freeze player
+      me.y = me.lastY
+      
+        
+    elif self.stage == 'BATTLE':
+      s2 = objsWithHP[0]
+      bird2.x = s2.x + 0.5
+      bird2.y = s2.y + 0.5
+      s2.speed = s2.maxSpeed * 0.5
+      
+      pass
+      
+      
 
   def draw(self):
     if self.inDialog:
@@ -759,13 +991,14 @@ class LevelEditor:
       ['Bird', 'bird.png', Bird],
       ['Ally Mothership', None, AllianceMotherShip, 'y-size', 'x-size2'],
       ['Enemy Mothership', None, EnemyMotherShip, 'x-size'],
-      ['Ally Ship', None, Ship],
-      ['Enemy Ship', None, SmallEnemyShip],
+      ['Ally Ship', None, AllianceShip],
+      ['Enemy Ship', 'enemy-0.png', SmallEnemyShip],
       ['Collision', None, CollisionWall, 'xy-x2-y2'],
-      ['Decor', None, Decoration, 'y-decorIndex'],
+      ['Decor', 'decor-0.png', Decoration, 'y-decorIndex'],
       ['Rect. Room', None, RectRoom, 'xy-x2-y2'],
-      ['Turret Station', None, TurretStation],
-      ['Turret', None, Turret],
+      ['Turret Station', 'turret-station.png', TurretStation],
+      ['Turret', 'turret.png', Turret],
+      ['Sheilds', None, Shields, 'x-w', 'y-h'],
 
 
     ]
@@ -1122,15 +1355,20 @@ class GameManager:
       Decoration(-18, 21, 0)
       global me
       # me = Bird(-18, -58)
-      me = Bird(-14.0, 20.0, "bird_x.png")
+      me = Bird(-14.0, 20.0, "bird_x.png", True)
       global bird2
       bird2 = Bird(-11.0, 19.0, "bird_y.png")
       EnemyMotherShip(-582, -24, 22)
       Turret(-554, -24)
       Turret(-563, -46)
       Turret(-563, -2)
-      Ship(-21.0, -17.0)
-      Ship(-19.0, -1.0)
+      TurretStation(99999, -58, AllianceShip)
+      TurretStation(99999, -58, AllianceShip)
+      TurretStation(99999, -58, AllianceShip)
+      AllianceShip(-21.0, -17.0)
+      AllianceShip(-19.0, -1.0)
+      Shields(0, -12, 40, 68)
+      Shields(-582, -24, 36, 36)
       global bookOfAnswers
       bookOfAnswers = Decoration(14, 33, 3)
       global storyController
@@ -1188,8 +1426,8 @@ class GameManager:
       Turret(-554, -24)
       Turret(-563, -46)
       Turret(-563, -2)
-      Ship(-21.0, -17.0)
-      Ship(-19.0, -1.0)
+      AllianceShip(-21.0, -17.0)
+      AllianceShip(-19.0, -1.0)
 
     elif scene == "credits":
       MenuOption("Back to Menu", w / 2, h / 2 + 120,
@@ -1250,7 +1488,6 @@ def mainloop():
   gameManager.preupdate()
   if me:
     me.player_control(delta)
-
   for i in range(len(objs) - 1, -1, -1):
     objs[i].update(delta)
   gameManager.postupdate()
@@ -1266,6 +1503,13 @@ def mainloop():
       renderer.camX = me.x
       renderer.camY = me.y
   hud.update(delta)
+  
+  # Remove dead objects
+  for i in range(len(objsWithHP) - 1, -1, -1):
+    if objsWithHP[i].hp <= 0:
+      objsWithHP[i].destroy()
+      objs.remove(objsWithHP[i])
+      objsWithHP.remove(objsWithHP[i])
 
   # Draw game state
   renderer.clearScreen()

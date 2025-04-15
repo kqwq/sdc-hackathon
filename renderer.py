@@ -21,6 +21,7 @@ class Renderer:
     self.camGotoHt = 0.015
     self.hw = window['width'] / 2
     self.hh = window['height'] / 2
+    self.bgSpaceImg = self.load_image("space.png")
 
   def on_window_resize(self, event):
     self.window['width'] = w = event.width
@@ -56,6 +57,7 @@ class Renderer:
       self.camGotoHt = meRef.maxCamHt
     if self.camGotoHt < 0.005:
       self.camGotoHt = 0.005
+      
 
   def levelEditorControls(self, mouse, keys):
     # WASD controls for camera movement, scroll wheel for zooming
@@ -84,6 +86,8 @@ class Renderer:
   def clearScreen(self):
     self.image.paste(
       "black", [0, 0, self.window['width'], self.window['height']])
+    
+    self.img(self.bgSpaceImg, 0, 0, self.hw * 2)  # Draw the background image
 
   def refreshTkinterImage(self):
     self.tk_image.paste(self.image)  # Update the Tkinter image
@@ -144,6 +148,9 @@ class Renderer:
 
   def world_circle(self, x, y, r, color):
     self.circle(self.X(x), self.Y(y), self.S(r), color)
+    
+  def world_ellipse_outlined(self, x, y, r1, r2, outline, width):
+    self.draw.ellipse([self.X(x-r1), self.Y(y-r2), self.X(x+r1), self.Y(y+r2)],  outline=outline, width=math.ceil(self.S(width)))
     
     
   # def world_text_center(self, x, y, text, color):
